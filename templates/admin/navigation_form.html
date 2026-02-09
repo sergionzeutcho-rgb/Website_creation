@@ -1,0 +1,64 @@
+{% extends "admin/base.html" %}
+
+{% block title %}{% if nav_item %}Edit Navigation Item{% else %}New Navigation Item{% endif %}{% endblock %}
+
+{% block content %}
+<div style="margin-bottom: 32px">
+  <a href="{{ url_for('admin_navigation') }}" style="color: #c5a572; text-decoration: none">← Back to navigation</a>
+  <h1 style="font-size: 32px; font-weight: 600; margin-top: 12px">{% if nav_item %}Edit Navigation Item{% else %}New Navigation Item{% endif %}</h1>
+</div>
+
+<div class="card">
+  <form method="POST">
+    <div class="form-group">
+      <label>Label *</label>
+      <input type="text" name="label" value="{{ nav_item.label if nav_item else '' }}" required placeholder="e.g., Click & Collect">
+      <div style="font-size: 12px; color: #6c757d; margin-top: 4px">Text shown in the navigation menu</div>
+    </div>
+    
+    <div class="form-group">
+      <label>URL *</label>
+      <input type="text" name="url" value="{{ nav_item.url if nav_item else '' }}" required placeholder="e.g., #collect or /shop">
+      <div style="font-size: 12px; color: #6c757d; margin-top: 4px">Use # for anchors on same page, or full URLs for external links</div>
+    </div>
+    
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem;">
+      <div class="form-group">
+        <label>Order</label>
+        <input type="number" name="order" value="{{ nav_item.order if nav_item else 0 }}" min="0">
+        <div style="font-size: 12px; color: #6c757d; margin-top: 4px">Display order (lower numbers appear first)</div>
+      </div>
+      
+      <div class="form-group">
+        <label>Target</label>
+        <select name="target">
+          <option value="_self" {% if nav_item and nav_item.target == '_self' %}selected{% endif %}>Same window (_self)</option>
+          <option value="_blank" {% if nav_item and nav_item.target == '_blank' %}selected{% endif %}>New tab (_blank)</option>
+        </select>
+        <div style="font-size: 12px; color: #6c757d; margin-top: 4px">Where to open the link</div>
+      </div>
+    </div>
+    
+    <div class="form-group">
+      <div class="form-check">
+        <input type="checkbox" name="is_cta" id="is_cta" {% if nav_item and nav_item.is_cta %}checked{% endif %}>
+        <label for="is_cta">Call-to-Action Button</label>
+      </div>
+      <div style="font-size: 12px; color: #6c757d; margin-top: 4px; margin-left: 28px">Display as a prominent button (gold background)</div>
+    </div>
+    
+    <div class="form-group">
+      <div class="form-check">
+        <input type="checkbox" name="is_active" id="is_active" {% if not nav_item or nav_item.is_active %}checked{% endif %}>
+        <label for="is_active">Active</label>
+      </div>
+      <div style="font-size: 12px; color: #6c757d; margin-top: 4px; margin-left: 28px">Only active items appear in the navigation</div>
+    </div>
+    
+    <div style="display: flex; gap: 1rem; margin-top: 2rem">
+      <button type="submit" class="btn btn-primary">Save Navigation Item</button>
+      <a href="{{ url_for('admin_navigation') }}" class="btn">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

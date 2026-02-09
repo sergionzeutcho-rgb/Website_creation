@@ -1,0 +1,450 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{% if settings %}{{ settings.site_title }}{% else %}Atelier Gourmand by OC | London{% endif %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700&family=Work+Sans:wght@300;400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
+    <link rel="stylesheet" href="{{ url_for('static', filename='animations.css') }}" />
+  </head>
+  <body>
+    <div class="grain" aria-hidden="true"></div>
+    <header class="site-header">
+      <div class="brand">
+        <button class="icon-btn" aria-label="Open menu">
+          <span></span>
+          <span></span>
+        </button>
+        <div class="brand-mark">
+          {% if settings and settings.logo_url %}
+          <img src="{{ settings.logo_url }}" alt="Logo" class="brand-logo">
+          {% endif %}
+          <div class="brand-text">
+            <span class="brand-title">Atelier Gourmand</span>
+            <span class="brand-subtitle">by OC · London</span>
+          </div>
+        </div>
+      </div>
+      <nav class="site-nav" aria-label="Primary">
+        {% if nav_items %}
+          {% for item in nav_items %}
+            <a href="{{ item.url }}" {% if item.target != '_self' %}target="{{ item.target }}"{% endif %} {% if item.is_cta %}class="nav-cta"{% endif %}>{{ item.label }}</a>
+          {% endfor %}
+        {% else %}
+          <a href="#collect">Click &amp; Collect</a>
+          <a href="#seasonal">Seasonal</a>
+          <a href="#maison">Our Maison</a>
+          <a class="nav-cta" href="#booking">Book a slot</a>
+        {% endif %}
+      </nav>
+    </header>
+
+    <main>
+      <section class="hero" id="collect">
+        <div class="hero-media">
+          {% if hero and hero.media_type == 'video' and hero.video_url %}
+          <video autoplay muted loop playsinline>
+            <source src="{{ hero.video_url }}" type="video/mp4">
+          </video>
+          {% else %}
+          <img
+            src="{% if hero and hero.image_url %}{{ hero.image_url }}{% else %}https://images.unsplash.com/photo-1481391032119-d89fee407e44?auto=format&fit=crop&w=1600&q=80{% endif %}"
+            alt="Assorted pastry creations"
+          />
+          {% endif %}
+          <div class="hero-glow"></div>
+        </div>
+        <div class="hero-copy">
+          <p class="kicker">{% if hero and hero.subtitle %}{{ hero.subtitle }}{% else %}London Atelier{% endif %}</p>
+          <h1>{% if hero and hero.title %}{{ hero.title }}{% else %}Seasonal creations, crafted with restraint.{% endif %}</h1>
+          <p class="lead">
+            {% if hero and hero.description %}
+              {{ hero.description }}
+            {% else %}
+              Our maison focuses on made-to-order pastries, elegant entremets, and
+              refined classics. Book a pickup slot and collect your order at our
+              atelier.
+            {% endif %}
+          </p>
+          <div class="hero-actions">
+            <a class="btn primary" href="#booking">Book a slot</a>
+            <a class="btn ghost" href="#seasonal">View seasonal</a>
+          </div>
+          <div class="hero-meta">
+            <div>
+              <span class="meta-label">Location</span>
+              <span>{% if hero and hero.location %}{{ hero.location }}{% else %}Wilton Place, SW1X · London{% endif %}</span>
+            </div>
+            <div>
+              <span class="meta-label">Hours</span>
+              <span>{% if hero and hero.hours %}{{ hero.hours }}{% else %}08:00 am to 07:00 pm{% endif %}</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="booking" id="booking">
+        <div class="booking-card">
+          <p class="kicker">Schedule your pickup</p>
+          <h2>I will collect my order on</h2>
+          <form class="booking-form" id="bookingForm">
+            <label>
+              Date
+              <input type="date" name="pickup_date" required />
+            </label>
+            <label>
+              Time
+              <select name="pickup_time" id="pickup_time" required>
+                <option value="">Loading slots...</option>
+              </select>
+            </label>
+            <label>
+              Email (required)
+              <input type="email" name="email" placeholder="your@email.com" required />
+            </label>
+            <label>
+              Phone (optional)
+              <input type="tel" name="phone" placeholder="+44 7xxx xxx xxx" />
+            </label>
+            <button class="btn primary" type="submit">Confirm slot</button>
+          </form>
+          <p class="booking-note" id="booking-note">
+            Slots update every morning. We will confirm by email.
+          </p>
+        </div>
+        <div class="booking-details">
+          <h3>Seasonal Collections</h3>
+          <p>
+            Limited batches, refined flavors, and a curated menu that evolves
+            each week. We focus on precision, minimalism, and clean finishes.
+          </p>
+          <div class="detail-grid">
+            <div>
+              <span class="detail-label">Next drop</span>
+              <span>Friday · 10:00 am</span>
+            </div>
+            <div>
+              <span class="detail-label">Pickup window</span>
+              <span>08:00 am - 07:00 pm</span>
+            </div>
+            <div>
+              <span class="detail-label">Order deadline</span>
+              <span>48 hours before</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="seasonal" id="seasonal">
+        <div class="section-head">
+          <p class="kicker">Our seasonal creations</p>
+          <h2>Delicate structures, bold fruits.</h2>
+          <p>
+            A rotating selection of tarts, entremets, and petits gateaux inspired
+            by the season.
+          </p>
+        </div>
+        <div class="card-grid" id="productsGrid">
+          {% if products %}
+            {% for product in products %}
+            <a href="{{ url_for('product_detail', slug=product.slug or product.id) }}" style="text-decoration: none; color: inherit; display: block">
+              <article class="card" style="transition: transform 0.3s ease, box-shadow 0.3s ease; cursor: pointer">
+                <img
+                  src="{% if product.image_url %}{{ product.image_url }}{% else %}https://images.unsplash.com/photo-1542826438-bd32f43d626f?auto=format&fit=crop&w=900&q=80{% endif %}"
+                  alt="{{ product.name }}"
+                />
+                <div class="card-body">
+                  <h3>{{ product.name }}</h3>
+                  <p>{{ product.short_description or product.description }}</p>
+                  {% if product.price %}
+                  <p style="margin-top: 0.5rem; font-weight: 600; color: var(--gold);">£{{ "%.2f"|format(product.price) }}</p>
+                  {% endif %}
+                </div>
+              </article>
+            </a>
+            {% endfor %}
+          {% else %}
+            <article class="card">
+              <img
+                src="https://images.unsplash.com/photo-1542826438-bd32f43d626f?auto=format&fit=crop&w=900&q=80"
+                alt="Raspberry tart"
+              />
+              <div class="card-body">
+                <h3>Raspberry Rose</h3>
+                <p>Almond cream, rose chantilly, crisp sable.</p>
+              </div>
+            </article>
+            <article class="card">
+              <img
+                src="https://images.unsplash.com/photo-1505253213348-790f9f02f69b?auto=format&fit=crop&w=900&q=80"
+                alt="Citrus tart"
+              />
+              <div class="card-body">
+                <h3>Citrus Bloom</h3>
+                <p>Lemon curd, bergamot, vanilla crème.</p>
+              </div>
+            </article>
+            <article class="card">
+              <img
+                src="https://images.unsplash.com/photo-1514517604298-cf80e0fb7f85?auto=format&fit=crop&w=900&q=80"
+                alt="Chocolate entremet"
+              />
+              <div class="card-body">
+                <h3>Noir Intense</h3>
+                <p>70% cocoa, hazelnut praline, crunch.</p>
+              </div>
+            </article>
+            <article class="card">
+              <img
+                src="https://images.unsplash.com/photo-1509440159596-0249088772ff?auto=format&fit=crop&w=900&q=80"
+                alt="Strawberry entremet"
+              />
+              <div class="card-body">
+                <h3>Strawberry Cloud</h3>
+                <p>Chantilly, basil gel, almond sponge.</p>
+              </div>
+            </article>
+          {% endif %}
+        </div>
+      </section>
+
+      <section class="maison" id="maison">
+        <div class="maison-copy">
+          <p class="kicker">Our maison</p>
+          <h2>{% if maison and maison.title %}{{ maison.title }}{% else %}Quiet luxury, careful detail.{% endif %}</h2>
+          <p>
+            {% if maison and maison.description %}
+              {{ maison.description }}
+            {% else %}
+              Atelier Gourmand by OC is a small batch patisserie dedicated to
+              elevated flavors and balanced composition. We keep the palette
+              minimal and the textures refined.
+            {% endif %}
+          </p>
+          <div class="maison-actions">
+            <a class="btn ghost" href="#collect">Discover the atelier</a>
+          </div>
+        </div>
+        <div class="maison-media">
+          <img
+            src="{% if maison and maison.image_url %}{{ maison.image_url }}{% else %}https://images.unsplash.com/photo-1515823662972-da6a2e4d3002?auto=format&fit=crop&w=1200&q=80{% endif %}"
+            alt="Pastry chef working"
+          />
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div>
+        <h3>Atelier Gourmand by OC</h3>
+        <p>{% if settings and settings.address %}{{ settings.address }}{% else %}Wilton Place, SW1X 7RL · London{% endif %}</p>
+      </div>
+      <div>
+        <p class="footer-label">Contact</p>
+        <p>{% if settings and settings.contact_email %}{{ settings.contact_email }}{% else %}hello@ateliergourmandbyoc.co.uk{% endif %}</p>
+        {% if settings and settings.phone %}<p>{{ settings.phone }}</p>{% endif %}
+      </div>
+      <div>
+        <p class="footer-label">Follow Us</p>
+        <div class="social-links">
+          {% if settings and settings.instagram %}
+          <a href="{{ settings.instagram }}" target="_blank" rel="noopener" aria-label="Instagram">
+            <svg width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/></svg>
+          </a>
+          {% endif %}
+          {% if settings and settings.tiktok %}
+          <a href="{{ settings.tiktok }}" target="_blank" rel="noopener" aria-label="TikTok">
+            <svg width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-5.2 1.74 2.89 2.89 0 0 1 2.31-4.64 2.93 2.93 0 0 1 .88.13V9.4a6.84 6.84 0 0 0-1-.05A6.33 6.33 0 0 0 5 20.1a6.34 6.34 0 0 0 10.86-4.43v-7a8.16 8.16 0 0 0 4.77 1.52v-3.4a4.85 4.85 0 0 1-1-.1z"/></svg>
+          </a>
+          {% endif %}
+          {% if settings and settings.facebook %}
+          <a href="{{ settings.facebook }}" target="_blank" rel="noopener" aria-label="Facebook">
+            <svg width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
+          </a>
+          {% endif %}
+          {% if settings and settings.youtube %}
+          <a href="{{ settings.youtube }}" target="_blank" rel="noopener" aria-label="YouTube">
+            <svg width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
+          </a>
+          {% endif %}
+        </div>
+      </div>
+    </footer>
+
+    <!-- Chat Widgets -->
+    {% if settings %}
+      {% if settings.whatsapp_number %}
+      <a href="https://wa.me/{{ settings.whatsapp_number.replace('+', '').replace(' ', '') }}" 
+         class="whatsapp-float" 
+         target="_blank" 
+         rel="noopener"
+         aria-label="Chat on WhatsApp">
+        <svg width="32" height="32" fill="white" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"/></svg>
+      </a>
+      {% endif %}
+      
+      {% if settings.chatway_widget %}
+      {{ settings.chatway_widget|safe }}
+      {% endif %}
+      
+      {% if settings.custom_chat_widget %}
+      {{ settings.custom_chat_widget|safe }}
+      {% endif %}
+    {% endif %}
+
+    <script>
+      // Load available time slots with dynamic grouping
+      async function loadTimeSlots() {
+        try {
+          const response = await fetch('/api/available-slots');
+          const slots = await response.json();
+          const select = document.getElementById('pickup_time');
+          
+          if (slots.length === 0) {
+            select.innerHTML = '<option value="">No slots available</option>';
+            return;
+          }
+          
+          // Group slots by time period
+          const periods = {
+            morning: { label: 'Matin (6h-12h)', slots: [] },
+            afternoon: { label: 'Après-midi (12h-18h)', slots: [] },
+            evening: { label: 'Soir (18h-23h)', slots: [] }
+          };
+          
+          slots.forEach(slot => {
+            const hour = parseInt(slot.time.split(':')[0]);
+            if (hour >= 6 && hour < 12) {
+              periods.morning.slots.push(slot);
+            } else if (hour >= 12 && hour < 18) {
+              periods.afternoon.slots.push(slot);
+            } else {
+              periods.evening.slots.push(slot);
+            }
+          });
+          
+          // Build select with optgroups
+          select.innerHTML = '<option value="">Choisir un créneau horaire</option>';
+          
+          Object.values(periods).forEach(period => {
+            if (period.slots.length > 0) {
+              const optgroup = document.createElement('optgroup');
+              optgroup.label = period.label;
+              
+              period.slots.forEach(slot => {
+                const option = document.createElement('option');
+                option.value = slot.time;
+                option.textContent = slot.time;
+                optgroup.appendChild(option);
+              });
+              
+              select.appendChild(optgroup);
+            }
+          });
+        } catch (error) {
+          console.error('Failed to load time slots:', error);
+          document.getElementById('pickup_time').innerHTML = '<option value="">Error loading slots</option>';
+        }
+      }
+
+      // Load slots on page load
+      loadTimeSlots();
+      
+      // Enhanced booking form with API integration
+      const form = document.getElementById("bookingForm");
+      const note = document.getElementById("booking-note");
+
+      if (form && note) {
+        form.addEventListener("submit", async (event) => {
+          event.preventDefault();
+          const data = new FormData(form);
+          
+          const bookingData = {
+            pickup_date: data.get("pickup_date"),
+            pickup_time: data.get("pickup_time"),
+            email: data.get("email"),
+            phone: data.get("phone")
+          };
+
+          if (!bookingData.pickup_date || !bookingData.pickup_time) {
+            note.textContent = "Please select a date and time to confirm.";
+            note.style.color = "#dc3545";
+            return;
+          }
+
+          try {
+            const response = await fetch('/api/booking', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify(bookingData)
+            });
+
+            if (response.ok) {
+              const result = await response.json();
+              note.textContent = `Slot confirmed for ${bookingData.pickup_date} at ${bookingData.pickup_time}. We will send you a confirmation email.`;
+              note.style.color = "#28a745";
+              form.reset();
+            } else {
+              const error = await response.json();
+              note.textContent = error.error || "There was an error. Please try again or contact us directly.";
+              note.style.color = "#dc3545";
+            }
+          } catch (error) {
+            note.textContent = "Connection error. Please try again later.";
+            note.style.color = "#dc3545";
+          }
+        });
+      }
+
+      // Smooth scroll
+      document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+        anchor.addEventListener('click', function (e) {
+          e.preventDefault();
+          const target = document.querySelector(this.getAttribute('href'));
+          if (target) {
+            target.scrollIntoView({
+              behavior: 'smooth',
+              block: 'start'
+            });
+          }
+        });
+      });
+      
+      // Mobile menu toggle
+      const menuBtn = document.querySelector('.icon-btn');
+      const nav = document.querySelector('.site-nav');
+      
+      if (menuBtn && nav) {
+        menuBtn.addEventListener('click', () => {
+          menuBtn.classList.toggle('active');
+          nav.classList.toggle('active');
+        });
+        
+        // Close menu when clicking a nav link
+        nav.querySelectorAll('a').forEach(link => {
+          link.addEventListener('click', () => {
+            menuBtn.classList.remove('active');
+            nav.classList.remove('active');
+          });
+        });
+        
+        // Close menu when clicking outside
+        document.addEventListener('click', (e) => {
+          if (!nav.contains(e.target) && !menuBtn.contains(e.target) && nav.classList.contains('active')) {
+            menuBtn.classList.remove('active');
+            nav.classList.remove('active');
+          }
+        });
+      }
+    </script>
+    <script src="{{ url_for('static', filename='site-features.js') }}"></script>
+  </body>
+</html>

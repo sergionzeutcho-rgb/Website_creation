@@ -1,0 +1,124 @@
+{% extends "admin/base.html" %}
+
+{% block title %}Delivery Settings{% endblock %}
+
+{% block content %}
+<h1 style="margin-bottom: 2rem; font-size: 2rem;">Delivery Settings</h1>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+    {% for category, message in messages %}
+      <div class="alert alert-{{ category }}" style="padding: 1rem; margin-bottom: 1.5rem; border-radius: 8px; background: {% if category == 'success' %}#d4edda{% elif category == 'error' %}#f8d7da{% else %}#fff3cd{% endif %};">
+        {{ message }}
+      </div>
+    {% endfor %}
+  {% endif %}
+{% endwith %}
+
+<!-- General Delivery Settings -->
+<div class="card" style="margin-bottom: 2rem;">
+    <h2 style="font-size: 1.25rem; margin-bottom: 1.5rem;">General Settings</h2>
+    <form method="POST" action="{{ url_for('admin_delivery_settings_update') }}">
+        <div style="margin-bottom: 1.5rem;">
+            <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                <input type="checkbox" name="delivery_enabled" value="1" {% if settings.delivery_enabled %}checked{% endif %} style="width: auto; margin: 0;">
+                <strong>Enable Delivery Service</strong>
+            </label>
+            <small style="color: #6c757d; display: block; margin-top: 0.5rem; margin-left: 1.75rem;">Allow customers to choose delivery instead of pickup</small>
+        </div>
+        
+        <div class="form-grid">
+            <div>
+                <label>Default Delivery Fee (£)</label>
+                <input type="number" name="default_delivery_fee" value="{{ settings.default_delivery_fee }}" min="0" step="0.01" required>
+                <small style="color: #6c757d; display: block; margin-top: 0.25rem;">Default fee when no zone matches</small>
+            </div>
+            
+            <div>
+                <label>Free Delivery Threshold (£)</label>
+                <input type="number" name="free_delivery_threshold" value="{{ settings.free_delivery_threshold }}" min="0" step="0.01">
+                <small style="color: #6c757d; display: block; margin-top: 0.25rem;">Free delivery for orders above this amount</small>
+            </div>
+        </div>
+        
+        <button type="submit" class="btn btn-primary" style="margin-top: 1rem;">Save Settings</button>
+    </form>
+</div>
+
+<!-- Delivery Zones -->
+<div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+        <h2 style="font-size: 1.25rem; margin: 0;">Delivery Zones</h2>
+        <a href="{{ url_for('admin_delivery_zone_new') }}" class="btn btn-primary">+ Add Zone</a>
+    </div>
+    
+    <p style="color: #6c757d; margin-bottom: 1.5rem;">Create custom delivery zones with different fees and postcodes.</p>
+    
+    {% if zones %}
+    <table>
+        <thead>
+            <tr>
+                <th>Zone Name</th>
+                <th>Postcodes</th>
+                <th>DeliveryFee</th>
+                <th>Min. Order</th>
+                <th>Delivery Time</th>
+                <th>Status</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for zone in zones %}
+            <tr>
+                <td><strong>{{ zone.name }}</strong></td>
+                <td>
+                    <small style="color: #6c757d;">{{ zone.postcodes[:50] }}{% if zone.postcodes|length > 50 %}...{% endif %}</small>
+                </td>
+                <td>£{{ "%.2f"|format(zone.delivery_fee) }}</td>
+                <td>
+                    {% if zone.min_order_amount > 0 %}
+                        £{{ "%.2f"|format(zone.min_order_amount) }}
+                    {% else %}
+                        <span style="color: #6c757d;">No min.</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if zone.estimated_delivery_time %}
+                        {{ zone.estimated_delivery_time }}
+                    {% else %}
+                        <span style="color: #6c757d;">-</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if zone.is_active %}
+                        <span style="padding: 0.25rem 0.75rem; background: #d4edda; color: #155724; border-radius: 12px; font-size: 0.875rem;">Active</span>
+                    {% else %}
+                        <span style="padding: 0.25rem 0.75rem; background: #f8d7da; color: #721c24; border-radius: 12px; font-size: 0.875rem;">Inactive</span>
+                    {% endif %}
+                </td>
+                <td>
+                    <a href="{{ url_for('admin_delivery_zone_edit', id=zone.id) }}" class="btn btn-sm">Edit</a>
+                    <form method="POST" action="{{ url_for('admin_delivery_zone_delete', id=zone.id) }}" style="display: inline;" onsubmit="return confirm('Delete this zone?')">
+                        <button type="submit" class="btn btn-sm" style="background: #dc3545; color: white;">Delete</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p style="color: #6c757d; text-align: center; padding: 2rem;">No delivery zones configured. Add your first zone!</p>
+    {% endif %}
+</div>
+
+<div class="card" style="margin-top: 2rem; background: #f8f9fa;">
+    <h3 style="margin-bottom: 1rem;">💡 How Delivery Zones Work</h3>
+    <ul style="margin: 0; padding-left: 1.5rem; color: #6c757d;">
+        <li>Enter postcodes as comma-separated values (e.g., "SW1, SW2, W1, W2")</li>
+        <li>Use postcode prefixes to match entire areas (e.g., "SW" matches all SW postcodes)</li>
+        <li>System checks zones in order - first match wins</li>
+        <li>Set different fees for different areas (e.g., £3 for local, £5 for outer zones)</li>
+        <li>Use inactive zones to temporarily disable delivery to certain areas</li>
+    </ul>
+</div>
+{% endblock %}

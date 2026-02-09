@@ -1,0 +1,37 @@
+{% extends "admin/base.html" %}
+
+{% block title %}Maison Section{% endblock %}
+
+{% block head %}
+{{ super() }}
+{{ ckeditor.load() }}
+{{ ckeditor.config(name='description', height=300) }}
+{% endblock %}
+
+{% block content %}
+<h1 style="margin-bottom: 2rem; font-size: 2rem;">Our Maison Section</h1>
+
+<div class="card">
+    <form method="POST" enctype="multipart/form-data">
+        <div class="form-group">
+            <label>Title</label>
+            <input type="text" name="title" value="{{ maison.title if maison else '' }}">
+        </div>
+        
+        <div class="form-group">
+            <label>Description</label>
+            {{ ckeditor.create(name='description', value=maison.description if maison else '') }}
+        </div>
+        
+        <div class="form-group">
+            <label>Image</label>
+            <input type="file" name="image" accept="image/*">
+            {% if maison and maison.image_url %}
+            <img src="{{ maison.image_url }}" class="image-preview" alt="Current maison image">
+            {% endif %}
+        </div>
+        
+        <button type="submit" class="btn btn-primary">Save Changes</button>
+    </form>
+</div>
+{% endblock %}

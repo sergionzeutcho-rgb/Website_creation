@@ -1,0 +1,119 @@
+{% extends "admin/base.html" %}
+
+{% block title %}Product Variants - {{ product.name }} - Admin{% endblock %}
+
+{% block content %}
+<div style="margin-bottom: 32px">
+  <a href="{{ url_for('admin_products') }}" style="color: #c5a572; text-decoration: none">← Back to products</a>
+  <h1 style="font-size: 32px; font-weight: 600; margin-top: 12px">Variants - {{ product.name }}</h1>
+</div>
+
+<div style="display: grid; grid-template-columns: 1fr 400px; gap: 32px">
+  <!-- Variants List -->
+  <div>
+    {% if product.variants %}
+    <div style="background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1)">
+      <table style="width: 100%; border-collapse: collapse">
+        <thead style="background: #f8f9fa; border-bottom: 2px solid #dee2e6">
+          <tr>
+            <th style="padding: 16px; text-align: left; font-weight: 600">Variant Name</th>
+            <th style="padding: 16px; text-align: left; font-weight: 600">Price Modifier</th>
+            <th style="padding: 16px; text-align: left; font-weight: 600">Stock</th>
+            <th style="padding: 16px; text-align: left; font-weight: 600">SKU</th>
+            <th style="padding: 16px; text-align: left; font-weight: 600">Active</th>
+            <th style="padding: 16px; text-align: right; font-weight: 600">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for variant in product.variants %}
+          <tr style="border-bottom: 1px solid #dee2e6">
+            <td style="padding: 16px; font-weight: 600">{{ variant.name }}</td>
+            <td style="padding: 16px">
+              {% if variant.price_modifier > 0 %}
+              <span style="color: #28a745">+£{{ "%.2f"|format(variant.price_modifier) }}</span>
+              {% elif variant.price_modifier < 0 %}
+              <span style="color: #dc3545">-£{{ "%.2f"|format(variant.price_modifier|abs) }}</span>
+              {% else %}
+              <span style="color: #6c757d">Standard</span>
+              {% endif %}
+            </td>
+            <td style="padding: 16px">
+              {% if variant.stock_quantity is not none %}
+              <span style="{% if variant.stock_quantity < 5 %}color: #dc3545{% elif variant.stock_quantity < 20 %}color: #ffc107{% else %}color: #28a745{% endif %}">
+                {{ variant.stock_quantity }}
+              </span>
+              {% else %}
+              <span style="color: #6c757d">N/A</span>
+              {% endif %}
+            </td>
+            <td style="padding: 16px; font-family: monospace; font-size: 13px; color: #6c757d">
+              {{ variant.sku or '—' }}
+            </td>
+            <td style="padding: 16px">
+              {% if variant.is_active %}
+              <span style="background: #d4edda; color: #155724; padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 600">Active</span>
+              {% else %}
+              <span style="background: #f8d7da; color: #721c24; padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 600">Inactive</span>
+              {% endif %}
+            </td>
+            <td style="padding: 16px; text-align: right">
+              <form action="{{ url_for('admin_delete_variant', id=variant.id) }}" method="POST" style="display: inline" onsubmit="return confirm('Delete this variant?')">
+                <button type="submit" style="background: none; border: none; color: #dc3545; cursor: pointer; font-size: 14px">Delete</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div style="text-align: center; padding: 60px 20px; background: white; border-radius: 8px">
+      <p style="color: #6c757d; margin-bottom: 16px">No variants yet. Create one using the form on the right.</p>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Add Variant Form -->
+  <div>
+    <form action="{{ url_for('admin_product_variants', id=product.id) }}" method="POST" style="background: white; border-radius: 8px; padding: 32px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); position: sticky; top: 100px">
+      <h2 style="font-size: 20px; font-weight: 600; margin-bottom: 24px">Add New Variant</h2>
+      
+      <div style="margin-bottom: 20px">
+        <label for="name" style="display: block; margin-bottom: 8px; font-weight: 500">Variant Name *</label>
+        <input type="text" id="name" name="name" required placeholder="e.g., Small, Medium, Large" style="width: 100%; padding: 12px; border: 1px solid #dee2e6; border-radius: 4px; font-size: 16px">
+        <div style="font-size: 12px; color: #6c757d; margin-top: 4px">Size, flavor, or other option</div>
+      </div>
+
+      <div style="margin-bottom: 20px">
+        <label for="price_modifier" style="display: block; margin-bottom: 8px; font-weight: 500">Price Modifier</label>
+        <input type="number" id="price_modifier" name="price_modifier" step="0.01" value="0.00" placeholder="0.00" style="width: 100%; padding: 12px; border: 1px solid #dee2e6; border-radius: 4px; font-size: 16px">
+        <div style="font-size: 12px; color: #6c757d; margin-top: 4px">Add to or subtract from base price (e.g., +2.50 or -1.00)</div>
+      </div>
+
+      <div style="margin-bottom: 20px">
+        <label for="stock_quantity" style="display: block; margin-bottom: 8px; font-weight: 500">Stock Quantity</label>
+        <input type="number" id="stock_quantity" name="stock_quantity" min="0" placeholder="Leave empty for unlimited" style="width: 100%; padding: 12px; border: 1px solid #dee2e6; border-radius: 4px; font-size: 16px">
+        <div style="font-size: 12px; color: #6c757d; margin-top: 4px">Leave blank if not tracking inventory</div>
+      </div>
+
+      <div style="margin-bottom: 20px">
+        <label for="sku" style="display: block; margin-bottom: 8px; font-weight: 500">SKU</label>
+        <input type="text" id="sku" name="sku" placeholder="Optional SKU code" style="width: 100%; padding: 12px; border: 1px solid #dee2e6; border-radius: 4px; font-size: 16px">
+        <div style="font-size: 12px; color: #6c757d; margin-top: 4px">Internal stock keeping unit</div>
+      </div>
+
+      <div style="margin-bottom: 24px">
+        <label style="display: flex; align-items: center; cursor: pointer">
+          <input type="checkbox" name="is_active" value="1" checked style="margin-right: 8px; width: 18px; height: 18px">
+          <span style="font-weight: 500">Active</span>
+        </label>
+        <div style="font-size: 12px; color: #6c757d; margin-top: 4px; margin-left: 26px">Only active variants are shown to customers</div>
+      </div>
+
+      <button type="submit" style="width: 100%; padding: 12px; background: #c5a572; color: white; border: none; border-radius: 4px; font-size: 16px; font-weight: 600; cursor: pointer">
+        Add Variant
+      </button>
+    </form>
+  </div>
+</div>
+{% endblock %}

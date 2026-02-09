@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Checkout - Atelier Gourmand by OC</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Inter:wght@300;400;500&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="brand">
+        <div class="brand-mark">
+          {% if settings and settings.logo_url %}
+          <img src="{{ settings.logo_url }}" alt="Logo" class="brand-logo">
+          {% endif %}
+          <div class="brand-text">
+            <span class="brand-title">Atelier Gourmand</span>
+            <span class="brand-subtitle">by OC · London</span>
+          </div>
+        </div>
+      </div>
+      <nav class="site-nav" aria-label="Primary">
+        <a href="{{ url_for('index') }}">Home</a>
+        <a href="{{ url_for('view_cart') }}">Cart ({{ cart_count }})</a>
+      </nav>
+    </header>
+
+    <main style="padding: 80px clamp(20px, 6vw, 90px)">
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          {% for category, message in messages %}
+            <div class="alert alert-{{ category }}" style="padding: 12px 20px; margin-bottom: 20px; border-radius: 8px; background: {% if category == 'success' %}#d4edda{% elif category == 'error' %}#f8d7da{% else %}#fff3cd{% endif %};">
+              {{ message }}
+            </div>
+          {% endfor %}
+        {% endif %}
+      {% endwith %}
+
+      <div style="max-width: 1200px; margin: 0 auto">
+        <h1 style="font-family: 'Playfair Display', serif; font-size: clamp(36px, 5vw, 48px); margin-bottom: 40px; text-align: center">Checkout</h1>
+
+        <form action="{{ url_for('checkout') }}" method="POST" style="display: grid; grid-template-columns: 1fr 400px; gap: 40px">
+          <!-- Customer & Pickup Details -->
+          <div>
+            <div class="booking-card" style="margin-bottom: 32px">
+              <h2 style="font-family: 'Playfair Display', serif; font-size: 24px; margin-bottom: 24px">Contact Information</h2>
+              
+              <div style="margin-bottom: 20px">
+                <label for="name" style="display: block; margin-bottom: 8px; font-weight: 500">Full Name *</label>
+                <input type="text" id="name" name="name" required style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 16px">
+              </div>
+
+              <div style="margin-bottom: 20px">
+                <label for="email" style="display: block; margin-bottom: 8px; font-weight: 500">Email *</label>
+                <input type="email" id="email" name="email" required style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 16px">
+              </div>
+
+              <div style="margin-bottom: 20px">
+                <label for="phone" style="display: block; margin-bottom: 8px; font-weight: 500">Phone</label>
+                <input type="tel" id="phone" name="phone" style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 16px">
+              </div>
+            </div>
+
+            <div class="booking-card" style="margin-bottom: 32px">
+              <h2 style="font-family: 'Playfair Display', serif; font-size: 24px; margin-bottom: 24px">Pickup Details</h2>
+              
+              <div style="margin-bottom: 20px">
+                <label for="pickup_date" style="display: block; margin-bottom: 8px; font-weight: 500">Pickup Date *</label>
+                <input type="date" id="pickup_date" name="pickup_date" required style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 16px">
+              </div>
+
+              <div style="margin-bottom: 20px">
+                <label for="pickup_time" style="display: block; margin-bottom: 8px; font-weight: 500">Pickup Time *</label>
+                <select id="pickup_time" name="pickup_time" required style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 16px">
+                  <option value="">--Choisir un créneau horaire--</option>
+                  {% set morning_slots = [] %}
+                  {% set afternoon_slots = [] %}
+                  {% set evening_slots = [] %}
+                  {% for slot in time_slots %}
+                    {% set hour = slot.time_slot.split(':')[0]|int %}
+                    {% if hour >= 6 and hour < 12 %}
+                      {% set _ = morning_slots.append(slot) %}
+                    {% elif hour >= 12 and hour < 18 %}
+                      {% set _ = afternoon_slots.append(slot) %}
+                    {% else %}
+                      {% set _ = evening_slots.append(slot) %}
+                    {% endif %}
+                  {% endfor %}
+                  {% if morning_slots %}
+                  <optgroup label="Matin (6h-12h)">
+                    {% for slot in morning_slots %}
+                    <option value="{{ slot.time_slot }}">{{ slot.time_slot }}</option>
+                    {% endfor %}
+                  </optgroup>
+                  {% endif %}
+                  {% if afternoon_slots %}
+                  <optgroup label="Après-midi (12h-18h)">
+                    {% for slot in afternoon_slots %}
+                    <option value="{{ slot.time_slot }}">{{ slot.time_slot }}</option>
+                    {% endfor %}
+                  </optgroup>
+                  {% endif %}
+                  {% if evening_slots %}
+                  <optgroup label="Soir (18h-23h)">
+                    {% for slot in evening_slots %}
+                    <option value="{{ slot.time_slot }}">{{ slot.time_slot }}</option>
+                    {% endfor %}
+                  </optgroup>
+                  {% endif %}
+                </select>
+              </div>
+
+              <div style="margin-bottom: 20px">
+                <label for="notes" style="display: block; margin-bottom: 8px; font-weight: 500">Special Instructions</label>
+                <textarea id="notes" name="notes" rows="4" style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 16px"></textarea>
+              </div>
+            </div>
+
+            <div class="booking-card">
+              <h2 style="font-family: 'Playfair Display', serif; font-size: 24px; margin-bottom: 24px">Payment Method</h2>
+              
+              <div style="margin-bottom: 16px">
+                <label style="display: flex; align-items: center; padding: 16px; border: 2px solid #ddd; border-radius: 8px; cursor: pointer">
+                  <input type="radio" name="payment_method" value="cash_on_pickup" checked style="margin-right: 12px">
+                  <div>
+                    <div style="font-weight: 600">Pay on Pickup</div>
+                    <div style="font-size: 14px; color: #777">Cash or card at collection</div>
+                  </div>
+                </label>
+              </div>
+
+              {% if settings and settings.stripe_public_key %}
+              <div style="margin-bottom: 16px">
+                <label style="display: flex; align-items: center; padding: 16px; border: 2px solid #ddd; border-radius: 8px; cursor: pointer">
+                  <input type="radio" name="payment_method" value="stripe" style="margin-right: 12px">
+                  <div>
+                    <div style="font-weight: 600">Pay Now (Card)</div>
+                    <div style="font-size: 14px; color: #777">Secure payment via Stripe</div>
+                  </div>
+                </label>
+              </div>
+              {% endif %}
+            </div>
+          </div>
+
+          <!-- Order Summary -->
+          <div>
+            <div style="background: var(--cream); border-radius: var(--radius); padding: 32px; position: sticky; top: 100px">
+              <h2 style="font-family: 'Playfair Display', serif; font-size: 24px; margin-bottom: 24px">Order Summary</h2>
+              
+              <div style="margin-bottom: 24px; max-height: 300px; overflow-y: auto">
+                {% for item in cart.items %}
+                <div style="display: flex; justify-content: space-between; margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid #ddd">
+                  <div>
+                    <div style="font-weight: 600">{{ item.product.name }}</div>
+                    {% if item.variant %}
+                    <div style="font-size: 13px; color: #777">{{ item.variant.name }}</div>
+                    {% endif %}
+                    <div style="font-size: 13px; color: #777">Qty: {{ item.quantity }}</div>
+                  </div>
+                  <div style="font-weight: 600">£{{ "%.2f"|format(item.quantity * item.price_at_add) }}</div>
+                </div>
+                {% endfor %}
+              </div>
+
+              <div style="padding-top: 20px; border-top: 2px solid var(--gold)">
+                <div style="display: flex; justify-content: space-between; margin-bottom: 12px">
+                  <span>Subtotal:</span>
+                  <span>£{{ "%.2f"|format(subtotal) }}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; margin-bottom: 20px">
+                  <span>Tax:</span>
+                  <span>£{{ "%.2f"|format(tax) }}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; font-size: 24px; font-weight: 700; color: var(--gold)">
+                  <span>Total:</span>
+                  <span>£{{ "%.2f"|format(total) }}</span>
+                </div>
+              </div>
+
+              <button type="submit" class="btn-primary" style="width: 100%; padding: 16px; margin-top: 24px; font-size: 16px; cursor: pointer">
+                Place Order
+              </button>
+
+              <a href="{{ url_for('view_cart') }}" style="display: block; text-align: center; margin-top: 12px; color: var(--gold); text-decoration: none">
+                ← Back to cart
+              </a>
+            </div>
+          </div>
+        </form>
+      </div>
+    </main>
+
+    <script>
+      // Set minimum date to today
+      const dateInput = document.getElementById('pickup_date');
+      const today = new Date().toISOString().split('T')[0];
+      dateInput.setAttribute('min', today);
+    </script>
+  </body>
+</html>

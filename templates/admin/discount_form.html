@@ -1,0 +1,119 @@
+{% extends "admin/base.html" %}
+
+{% block title %}{% if discount %}Edit Discount{% else %}New Discount{% endif %}{% endblock %}
+
+{% block content %}
+<h1 style="margin-bottom: 2rem; font-size: 2rem;">{% if discount %}Edit Discount Code{% else %}Create Discount Code{% endif %}</h1>
+
+<div class="card">
+    <form method="POST" enctype="multipart/form-data">
+        <div class="form-grid">
+            <div>
+                <label>Discount Code *</label>
+                <input type="text" name="code" value="{% if discount %}{{ discount.code }}{% endif %}" placeholder="e.g., WELCOME10" required style="text-transform: uppercase;">
+                <small style="color: #6c757d; display: block; margin-top: 0.25rem;">Use uppercase letters and numbers only</small>
+            </div>
+            
+            <div>
+                <label>Description</label>
+                <input type="text" name="description" value="{% if discount %}{{ discount.description }}{% endif %}" placeholder="e.g., 10% off for new customers">
+            </div>
+        </div>
+        
+        <div class="form-grid">
+            <div>
+                <label>Discount Type *</label>
+                <select name="discount_type" id="discount_type" required onchange="toggleDiscountFields()">
+                    <option value="percentage" {% if discount and discount.discount_type == 'percentage' %}selected{% endif %}>Percentage (%)</option>
+                    <option value="fixed" {% if discount and discount.discount_type == 'fixed' %}selected{% endif %}>Fixed Amount (£)</option>
+                </select>
+            </div>
+            
+            <div>
+                <label id="discount_value_label">Discount Value *</label>
+                <input type="number" name="discount_value" value="{% if discount %}{{ discount.discount_value }}{% endif %}" min="0" step="0.01" required placeholder="e.g., 10">
+            </div>
+        </div>
+        
+        <div class="form-grid">
+            <div>
+                <label>Minimum Order Amount (£)</label>
+                <input type="number" name="min_order_amount" value="{% if discount %}{{ discount.min_order_amount }}{% else %}0{% endif %}" min="0" step="0.01">
+                <small style="color: #6c757d; display: block; margin-top: 0.25rem;">0 = no minimum</small>
+            </div>
+            
+            <div id="max_discount_field" style="{% if discount and discount.discount_type == 'fixed' %}display: none;{% endif %}">
+                <label>Max Discount Amount (£)</label>
+                <input type="number" name="max_discount_amount" value="{% if discount %}{{ discount.max_discount_amount }}{% endif %}" min="0" step="0.01">
+                <small style="color: #6c757d; display: block; margin-top: 0.25rem;">Optional: cap percentage discounts</small>
+            </div>
+        </div>
+        
+        <div style="margin: 1.5rem 0; padding: 1rem; background: #f8f9fa; border-radius: 8px;">
+            <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                <input type="checkbox" name="free_delivery" value="1" {% if discount and discount.free_delivery %}checked{% endif %} style="width: auto; margin: 0;">
+                <strong>Include Free Delivery</strong>
+            </label>
+            <small style="color: #6c757d; display: block; margin-top: 0.5rem; margin-left: 1.75rem;">Customers using this code get free delivery</small>
+        </div>
+        
+        <div class="form-grid">
+            <div>
+                <label>Usage Limit</label>
+                <input type="number" name="usage_limit" value="{% if discount %}{{ discount.usage_limit }}{% endif %}" min="1">
+                <small style="color: #6c757d; display: block; margin-top: 0.25rem;">Empty = unlimited uses</small>
+            </div>
+            
+            <div>
+                <label>Per Customer Limit</label>
+                <input type="number" name="per_customer_limit" value="{% if discount %}{{ discount.per_customer_limit }}{% else %}1{% endif %}" min="1">
+                <small style="color: #6c757d; display: block; margin-top: 0.25rem;">How many times each customer can use this code</small>
+            </div>
+        </div>
+        
+        <div class="form-grid">
+            <div>
+                <label>Start Date</label>
+                <input type="datetime-local" name="start_date" value="{% if discount and discount.start_date %}{{ discount.start_date.strftime('%Y-%m-%dT%H:%M') }}{% endif %}">
+            </div>
+            
+            <div>
+                <label>End Date</label>
+                <input type="datetime-local" name="end_date" value="{% if discount and discount.end_date %}{{ discount.end_date.strftime('%Y-%m-%dT%H:%M') }}{% endif %}">
+            </div>
+        </div>
+        
+        <div style="margin: 1.5rem 0;">
+            <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                <input type="checkbox" name="is_active" value="1" {% if not discount or discount.is_active %}checked{% endif %} style="width: auto; margin: 0;">
+                <strong>Active</strong>
+            </label>
+            <small style="color: #6c757d; display: block; margin-top: 0.5rem; margin-left: 1.75rem;">Inactive codes cannot be used</small>
+        </div>
+        
+        <div style="display: flex; gap: 1rem; margin-top: 2rem;">
+            <button type="submit" class="btn btn-primary">{% if discount %}Update Discount{% else %}Create Discount{% endif %}</button>
+            <a href="{{ url_for('admin_discounts') }}" class="btn">Cancel</a>
+        </div>
+    </form>
+</div>
+
+<script>
+function toggleDiscountFields() {
+    const type = document.getElementById('discount_type').value;
+    const maxField = document.getElementById('max_discount_field');
+    const label = document.getElementById('discount_value_label');
+    
+    if (type === 'percentage') {
+        maxField.style.display = 'block';
+        label.textContent = 'Discount Percentage (%) *';
+    } else {
+        maxField.style.display = 'none';
+        label.textContent = 'Discount Amount (£) *';
+    }
+}
+
+// Initialize on load
+toggleDiscountFields();
+</script>
+{% endblock %}

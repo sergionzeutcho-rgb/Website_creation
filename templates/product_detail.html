@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{{ product.name }} - Atelier Gourmand by OC</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Inter:wght@300;400;500&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="brand">
+        <button class="icon-btn" aria-label="Open menu">
+          <span></span>
+          <span></span>
+        </button>
+        <div class="brand-mark">
+          {% if settings and settings.logo_url %}
+          <img src="{{ settings.logo_url }}" alt="Logo" class="brand-logo">
+          {% endif %}
+          <div class="brand-text">
+            <span class="brand-title">Atelier Gourmand</span>
+            <span class="brand-subtitle">by OC · London</span>
+          </div>
+        </div>
+      </div>
+      <nav class="site-nav" aria-label="Primary">
+        <a href="{{ url_for('index') }}">Home</a>
+        <a href="{{ url_for('view_cart') }}">Cart ({{ cart_count }})</a>
+        <a class="nav-cta" href="{{ url_for('index') }}#booking">Book a slot</a>
+      </nav>
+    </header>
+
+    <main style="padding: 80px clamp(20px, 6vw, 90px);">
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          {% for category, message in messages %}
+            <div class="alert alert-{{ category }}" style="padding: 12px 20px; margin-bottom: 20px; border-radius: 8px; background: {% if category == 'success' %}#d4edda{% elif category == 'error' %}#f8d7da{% else %}#fff3cd{% endif %};">
+              {{ message }}
+            </div>
+          {% endfor %}
+        {% endif %}
+      {% endwith %}
+
+      <div style="max-width: 1200px; margin: 0 auto">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 60px; margin-bottom: 60px">
+          <!-- Product Images -->
+          <div>
+            <div style="border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow-lg); margin-bottom: 20px">
+              <img src="{{ product.image_url or 'https://via.placeholder.com/600x600' }}" alt="{{ product.name }}" style="width: 100%; height: auto; display: block">
+            </div>
+          </div>
+
+          <!-- Product Details -->
+          <div>
+            <h1 style="font-family: 'Playfair Display', serif; font-size: clamp(32px, 5vw, 48px); margin-bottom: 12px">{{ product.name }}</h1>
+            
+            <p style="font-size: 28px; color: var(--gold); font-weight: 600; margin-bottom: 24px">
+              £{{ "%.2f"|format(product.price) }}
+            </p>
+
+            {% if product.short_description %}
+            <p style="margin-bottom: 32px; line-height: 1.7; color: #555">{{ product.short_description }}</p>
+            {% endif %}
+
+            <!-- Add to Cart Form -->
+            <form action="{{ url_for('add_to_cart') }}" method="POST" style="border-top: 1px solid #eee; padding-top: 32px">
+              <input type="hidden" name="product_id" value="{{ product.id }}">
+              
+              {% if product.variants %}
+              <div style="margin-bottom: 20px">
+                <label style="display: block; margin-bottom: 8px; font-size: 14px; text-transform: uppercase; letter-spacing: 0.1em">Select Variant</label>
+                <select name="variant_id" style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 16px">
+                  <option value="">Standard</option>
+                  {% for variant in product.variants %}
+                    {% if variant.is_active %}
+                    <option value="{{ variant.id }}">
+                      {{ variant.name }} 
+                      {% if variant.price_modifier > 0 %}(+£{{ "%.2f"|format(variant.price_modifier) }}){% endif %}
+                      {% if variant.price_modifier < 0 %}(£{{ "%.2f"|format(variant.price_modifier) }}){% endif %}
+                    </option>
+                    {% endif %}
+                  {% endfor %}
+                </select>
+              </div>
+              {% endif %}
+
+              <div style="margin-bottom: 20px">
+                <label style="display: block; margin-bottom: 8px; font-size: 14px; text-transform: uppercase; letter-spacing: 0.1em">Quantity</label>
+                <input type="number" name="quantity" value="1" min="1" max="99" style="width: 100px; padding: 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 16px">
+              </div>
+
+              <button type="submit" class="btn-primary" style="width: 100%; padding: 16px; font-size: 16px; cursor: pointer">
+                Add to cart
+              </button>
+            </form>
+
+            <a href="{{ url_for('index') }}" style="display: inline-block; margin-top: 20px; color: var(--gold); text-decoration: none">
+              ← Continue shopping
+            </a>
+          </div>
+        </div>
+
+        <!-- Full Description -->
+        {% if product.full_description %}
+        <div style="border-top: 1px solid #eee; padding-top: 60px">
+          <h2 style="font-family: 'Playfair Display', serif; font-size: 32px; margin-bottom: 24px">Description</h2>
+          <div style="line-height: 1.8; color: #555">
+            {{ product.full_description|safe }}
+          </div>
+        </div>
+        {% endif %}
+      </div>
+    </main>
+
+    <footer class="site-footer">
+      <div>
+        <h3>Atelier Gourmand by OC</h3>
+        <p>{% if settings and settings.address %}{{ settings.address }}{% else %}Wilton Place, SW1X 7RL · London{% endif %}</p>
+      </div>
+      <div>
+        <p class="footer-label">Contact</p>
+        <p>{% if settings and settings.contact_email %}{{ settings.contact_email }}{% else %}hello@ateliergourmandbyoc.co.uk{% endif %}</p>
+      </div>
+    </footer>
+  </body>
+</html>

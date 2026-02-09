@@ -1,0 +1,64 @@
+{% extends "admin/base.html" %}
+
+{% block title %}{% if zone %}Edit Delivery Zone{% else %}New Delivery Zone{% endif %}{% endblock %}
+
+{% block content %}
+<h1 style="margin-bottom: 2rem; font-size: 2rem;">{% if zone %}Edit Delivery Zone{% else %}Create Delivery Zone{% endif %}</h1>
+
+<div class="card">
+    <form method="POST">
+        <div>
+            <label>Zone Name *</label>
+            <input type="text" name="name" value="{% if zone %}{{ zone.name }}{% endif %}" placeholder="e.g., Central London" required>
+        </div>
+        
+        <div style="margin-top: 1.5rem;">
+            <label>Postcodes *</label>
+            <textarea name="postcodes" rows="3" placeholder="e.g., SW1, SW2, W1, WC1, EC1" required>{% if zone %}{{ zone.postcodes }}{% endif %}</textarea>
+            <small style="color: #6c757d; display: block; margin-top: 0.5rem;">Enter postcodes or prefixes, separated by commas</small>
+        </div>
+        
+        <div class="form-grid">
+            <div>
+                <label>Delivery Fee (£) *</label>
+                <input type="number" name="delivery_fee" value="{% if zone %}{{ zone.delivery_fee }}{% else %}5.00{% endif %}" min="0" step="0.01" required>
+            </div>
+            
+            <div>
+                <label>Minimum Order Amount (£)</label>
+                <input type="number" name="min_order_amount" value="{% if zone %}{{ zone.min_order_amount }}{% else %}0{% endif %}" min="0" step="0.01">
+                <small style="color: #6c757d; display: block; margin-top: 0.25rem;">0 = no minimum</small>
+            </div>
+        </div>
+        
+        <div style="margin-top: 1.5rem;">
+            <label>Estimated Delivery Time</label>
+            <input type="text" name="estimated_delivery_time" value="{% if zone %}{{ zone.estimated_delivery_time }}{% endif %}" placeholder="e.g., 30-45 mins">
+            <small style="color: #6c757d; display: block; margin-top: 0.25rem;">Shown to customers during checkout</small>
+        </div>
+        
+        <div style="margin: 1.5rem 0;">
+            <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                <input type="checkbox" name="is_active" value="1" {% if not zone or zone.is_active %}checked{% endif %} style="width: auto; margin: 0;">
+                <strong>Active</strong>
+            </label>
+            <small style="color: #6c757d; display: block; margin-top: 0.5rem; margin-left: 1.75rem;">Inactive zones won't be used for delivery calculations</small>
+        </div>
+        
+        <div style="display: flex; gap: 1rem; margin-top: 2rem;">
+            <button type="submit" class="btn btn-primary">{% if zone %}Update Zone{% else %}Create Zone{% endif %}</button>
+            <a href="{{ url_for('admin_delivery') }}" class="btn">Cancel</a>
+        </div>
+    </form>
+</div>
+
+<div class="card" style="margin-top: 2rem; background: #e3f2fd;">
+    <h3 style="margin-bottom: 1rem; color: #1976d2;">💡 Postcode Examples</h3>
+    <ul style="margin: 0; padding-left: 1.5rem; color: #1565c0;">
+        <li><strong>Full postcodes:</strong> SW1A 1AA, W1A 0AX</li>
+        <li><strong>Postcode areas:</strong> SW, W, EC, WC</li>
+        <li><strong>Postcode districts:</strong> SW1, W1, EC1, WC2</li>
+        <li><strong>Mixed:</strong> SW1, SW2, W, EC1A, EC1B</li>
+    </ul>
+</div>
+{% endblock %}

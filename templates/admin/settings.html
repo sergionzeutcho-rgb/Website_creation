@@ -1,0 +1,107 @@
+{% extends "admin/base.html" %}
+
+{% block title %}Settings{% endblock %}
+
+{% block content %}
+<h1 style="margin-bottom: 2rem; font-size: 2rem;">Site Settings</h1>
+
+<!-- Basic Settings -->
+<div class="card">
+    <h2>Basic Information</h2>
+    <form method="POST" enctype="multipart/form-data">
+        <div class="form-group">
+            <label>Site Logo</label>
+            <input type="file" name="logo" accept="image/*">
+            {% if settings and settings.logo_url %}
+            <img src="{{ settings.logo_url }}" class="image-preview" alt="Current logo" style="max-width: 200px;">
+            {% endif %}
+            <small style="display: block; color: #6c757d; margin-top: 0.5rem;">Upload your logo (PNG or SVG recommended with transparent background)</small>
+        </div>
+        
+        <div class="form-group">
+            <label>Site Title</label>
+            <input type="text" name="site_title" value="{{ settings.site_title if settings else '' }}">
+        </div>
+        
+        <div class="form-group">
+            <label>Contact Email</label>
+            <input type="email" name="contact_email" value="{{ settings.contact_email if settings else '' }}">
+        </div>
+        
+        <div class="form-group">
+            <label>Phone</label>
+            <input type="text" name="phone" value="{{ settings.phone if settings else '' }}">
+        </div>
+        
+        <div class="form-group">
+            <label>Address</label>
+            <textarea name="address">{{ settings.address if settings else '' }}</textarea>
+        </div>
+        
+        <h2 style="margin-top: 2rem; margin-bottom: 1rem;">Social Media</h2>
+        <p style="color: #6c757d; margin-bottom: 1.5rem;">Enter your full profile URLs (e.g., https://instagram.com/yourhandle)</p>
+        
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem;">
+            <div class="form-group">
+                <label>Instagram</label>
+                <input type="url" name="instagram" value="{{ settings.instagram if settings else '' }}" placeholder="https://instagram.com/yourhandle">
+            </div>
+            
+            <div class="form-group">
+                <label>TikTok</label>
+                <input type="url" name="tiktok" value="{{ settings.tiktok if settings else '' }}" placeholder="https://tiktok.com/@yourhandle">
+            </div>
+            
+            <div class="form-group">
+                <label>Facebook</label>
+                <input type="url" name="facebook" value="{{ settings.facebook if settings else '' }}" placeholder="https://facebook.com/yourpage">
+            </div>
+            
+            <div class="form-group">
+                <label>YouTube</label>
+                <input type="url" name="youtube" value="{{ settings.youtube if settings else '' }}" placeholder="https://youtube.com/@yourchannel">
+            </div>
+        </div>
+        
+        <h2 style="margin-top: 2rem; margin-bottom: 1rem;">Payment Integration</h2>
+        <p style="color: #6c757d; margin-bottom: 1.5rem;">Configure payment gateways (coming soon - enter keys for future use)</p>
+        
+        <div class="form-group">
+            <label>Stripe Public Key</label>
+            <input type="text" name="stripe_public_key" value="{{ settings.stripe_public_key if settings else '' }}" placeholder="pk_live_...">
+        </div>
+        
+        <div class="form-group">
+            <label>Stripe Secret Key (keep secure!)</label>
+            <input type="password" name="stripe_secret_key" value="{{ settings.stripe_secret_key if settings else '' }}" placeholder="sk_live_...">
+        </div>
+        
+        <div class="form-group">
+            <label>PayPal Client ID</label>
+            <input type="text" name="paypal_client_id" value="{{ settings.paypal_client_id if settings else '' }}" placeholder="Your PayPal client ID">
+        </div>
+        
+        <h2 style="margin-top: 2rem; margin-bottom: 1rem;">Chat & Communication</h2>
+        
+        <div class="form-group">
+            <label>WhatsApp Number (with country code)</label>
+            <input type="text" name="whatsapp_number" value="{{ settings.whatsapp_number if settings else '' }}" placeholder="+447123456789">
+            <small style="display: block; color: #6c757d; margin-top: 0.5rem;">Will display a WhatsApp chat button</small>
+        </div>
+        
+        <div class="form-group">
+            <label>Chatway Widget Code</label>
+            <textarea name="chatway_widget" rows="4" placeholder='<script src="..." ...></script>'>{{ settings.chatway_widget if settings else '' }}</textarea>
+            <small style="display: block; color: #6c757d; margin-top: 0.5rem;">Paste your Chatway embed code here</small>
+        </div>
+        
+        <div class="form-group">
+            <label>Custom Chat Widget</label>
+            <textarea name="custom_chat_widget" rows="4" placeholder='<script> ... </script>'>{{ settings.custom_chat_widget if settings else '' }}</textarea>
+            <small style="display: block; color: #6c757d; margin-top: 0.5rem;">Any other chat widget code (Tawk.to, Intercom, etc.)</small>
+        </div>
+        
+        <button type="submit" class="btn btn-primary">Save All Settings</button>
+    </form>
+</div>
+{% endblock %}

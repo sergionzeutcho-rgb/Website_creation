@@ -1,0 +1,106 @@
+{% extends "admin/base.html" %}
+
+{% block title %}Discount Codes{% endblock %}
+
+{% block content %}
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
+    <h1 style="font-size: 2rem;">Discount Codes</h1>
+    <a href="{{ url_for('admin_discount_new') }}" class="btn btn-primary">+ Add Discount Code</a>
+</div>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+    {% for category, message in messages %}
+      <div class="alert alert-{{ category }}" style="padding: 1rem; margin-bottom: 1.5rem; border-radius: 8px; background: {% if category == 'success' %}#d4edda{% elif category == 'error' %}#f8d7da{% else %}#fff3cd{% endif %};">
+        {{ message }}
+      </div>
+    {% endfor %}
+  {% endif %}
+{% endwith %}
+
+<div class="card">
+    {% if discounts %}
+    <table>
+        <thead>
+            <tr>
+                <th>Code</th>
+                <th>Type</th>
+                <th>Value</th>
+                <th>Min. Order</th>
+                <th>Usage</th>
+                <th>Status</th>
+                <th>Valid Until</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for discount in discounts %}
+            <tr>
+                <td><strong>{{ discount.code }}</strong></td>
+                <td>
+                    {% if discount.discount_type == 'percentage' %}
+                        <span style="padding: 0.25rem 0.5rem; background: #e3f2fd; color: #1976d2; border-radius: 4px; font-size: 0.875rem;">Percentage</span>
+                    {% else %}
+                        <span style="padding: 0.25rem 0.5rem; background: #e8f5e9; color: #388e3c; border-radius: 4px; font-size: 0.875rem;">Fixed</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if discount.discount_type == 'percentage' %}
+                        {{ discount.discount_value }}%
+                    {% else %}
+                        £{{ "%.2f"|format(discount.discount_value) }}
+                    {% endif %}
+                    {% if discount.free_delivery %}
+                        <span style="padding: 0.25rem 0.5rem; background: #fff3cd; color: #856404; border-radius: 4px; font-size: 0.75rem; margin-left: 0.5rem;">+ Free Delivery</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if discount.min_order_amount > 0 %}
+                        £{{ "%.2f"|format(discount.min_order_amount) }}
+                    {% else %}
+                        <span style="color: #6c757d;">No minimum</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {{ discount.usage_count }}/{% if discount.usage_limit %}{{ discount.usage_limit }}{% else %}∞{% endif %}
+                </td>
+                <td>
+                    {% if discount.is_active %}
+                        <span style="padding: 0.25rem 0.75rem; background: #d4edda; color: #155724; border-radius: 12px; font-size: 0.875rem;">Active</span>
+                    {% else %}
+                        <span style="padding: 0.25rem 0.75rem; background: #f8d7da; color: #721c24; border-radius: 12px; font-size: 0.875rem;">Inactive</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if discount.end_date %}
+                        {{ discount.end_date.strftime('%Y-%m-%d') }}
+                    {% else %}
+                        <span style="color: #6c757d;">No expiry</span>
+                    {% endif %}
+                </td>
+                <td>
+                    <a href="{{ url_for('admin_discount_edit', id=discount.id) }}" class="btn btn-sm">Edit</a>
+                    <form method="POST" action="{{ url_for('admin_discount_delete', id=discount.id) }}" style="display: inline;" onsubmit="return confirm('Delete this discount code?')">
+                        <button type="submit" class="btn btn-sm" style="background: #dc3545; color: white;">Delete</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p style="color: #6c757d; text-align: center; padding: 2rem;">No discount codes yet. Create your first discount code!</p>
+    {% endif %}
+</div>
+
+<div class="card" style="margin-top: 2rem; background: #f8f9fa;">
+    <h3 style="margin-bottom: 1rem;">💡 Tips for Discount Codes</h3>
+    <ul style="margin: 0; padding-left: 1.5rem; color: #6c757d;">
+        <li>Use memorable codes like WELCOME10, SUMMER20, FREESHIP</li>
+        <li>Set usage limits to control budget impact</li>
+        <li>Percentage discounts can have max amounts to cap costs</li>
+        <li>Free delivery discounts work great for first-time customers</li>
+        <li>Set end dates for limited-time promotions</li>
+    </ul>
+</div>
+{% endblock %}

@@ -1,0 +1,63 @@
+{% extends "admin/base.html" %}
+
+{% block title %}Navigation - Admin{% endblock %}
+
+{% block content %}
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 32px">
+  <h1 style="font-size: 32px; font-weight: 600">Navigation Menu</h1>
+  <a href="{{ url_for('admin_navigation_new') }}" style="padding: 12px 24px; background: #c5a572; color: white; text-decoration: none; border-radius: 4px; font-weight: 600">
+    + Add Item
+  </a>
+</div>
+
+{% if nav_items %}
+<div style="background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1)">
+  <table style="width: 100%; border-collapse: collapse">
+    <thead style="background: #f8f9fa; border-bottom: 2px solid #dee2e6">
+      <tr>
+        <th style="padding: 16px; text-align: left; font-weight: 600">Label</th>
+        <th style="padding: 16px; text-align: left; font-weight: 600">URL</th>
+        <th style="padding: 16px; text-align: left; font-weight: 600">Type</th>
+        <th style="padding: 16px; text-align: left; font-weight: 600">Order</th>
+        <th style="padding: 16px; text-align: left; font-weight: 600">Status</th>
+        <th style="padding: 16px; text-align: right; font-weight: 600">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in nav_items %}
+      <tr style="border-bottom: 1px solid #dee2e6">
+        <td style="padding: 16px; font-weight: 600">{{ item.label }}</td>
+        <td style="padding: 16px; font-family: monospace; font-size: 13px; color: #6c757d">{{ item.url }}</td>
+        <td style="padding: 16px">
+          {% if item.is_cta %}
+          <span style="background: #c5a572; color: white; padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 600">CTA Button</span>
+          {% else %}
+          <span style="background: #e2e3e5; color: #383d41; padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 600">Link</span>
+          {% endif %}
+        </td>
+        <td style="padding: 16px">{{ item.order }}</td>
+        <td style="padding: 16px">
+          {% if item.is_active %}
+          <span style="background: #d4edda; color: #155724; padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 600">Active</span>
+          {% else %}
+          <span style="background: #f8d7da; color: #721c24; padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 600">Inactive</span>
+          {% endif %}
+        </td>
+        <td style="padding: 16px; text-align: right">
+          <a href="{{ url_for('admin_navigation_edit', id=item.id) }}" style="color: #c5a572; text-decoration: none; margin-right: 12px">Edit</a>
+          <form action="{{ url_for('admin_navigation_delete', id=item.id) }}" method="POST" style="display: inline" onsubmit="return confirm('Delete this navigation item?')">
+            <button type="submit" style="background: none; border: none; color: #dc3545; cursor: pointer">Delete</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div style="text-align: center; padding: 60px 20px; background: white; border-radius: 8px">
+  <p style="color: #6c757d; margin-bottom: 16px">No navigation items yet</p>
+  <a href="{{ url_for('admin_navigation_new') }}" style="color: #c5a572; text-decoration: none">Create your first navigation item →</a>
+</div>
+{% endif %}
+{% endblock %}

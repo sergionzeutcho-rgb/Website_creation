@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Atelier Gourmand by OC | London</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700&family=Work+Sans:wght@300;400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="grain" aria-hidden="true"></div>
+    <header class="site-header">
+      <div class="brand">
+        <button class="icon-btn" aria-label="Open menu">
+          <span></span>
+          <span></span>
+        </button>
+        <div class="brand-mark">
+          <span class="brand-title">Atelier Gourmand</span>
+          <span class="brand-subtitle">by OC · London</span>
+        </div>
+      </div>
+      <nav class="site-nav" aria-label="Primary">
+        <a href="#collect">Click &amp; Collect</a>
+        <a href="#seasonal">Seasonal</a>
+        <a href="#maison">Our Maison</a>
+        <a class="nav-cta" href="#booking">Book a slot</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="hero" id="collect">
+        <div class="hero-media">
+          <img
+            src="https://images.unsplash.com/photo-1481391032119-d89fee407e44?auto=format&fit=crop&w=1600&q=80"
+            alt="Assorted pastry creations"
+          />
+          <div class="hero-glow"></div>
+        </div>
+        <div class="hero-copy">
+          <p class="kicker">London Atelier</p>
+          <h1>Seasonal creations, crafted with restraint.</h1>
+          <p class="lead">
+            Our maison focuses on made-to-order pastries, elegant entremets, and
+            refined classics. Book a pickup slot and collect your order at our
+            atelier.
+          </p>
+          <div class="hero-actions">
+            <a class="btn primary" href="#booking">Book a slot</a>
+            <a class="btn ghost" href="#seasonal">View seasonal</a>
+          </div>
+          <div class="hero-meta">
+            <div>
+              <span class="meta-label">Location</span>
+              <span>Wilton Place, SW1X · London</span>
+            </div>
+            <div>
+              <span class="meta-label">Hours</span>
+              <span>08:00 am to 07:00 pm</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="booking" id="booking">
+        <div class="booking-card">
+          <p class="kicker">Schedule your pickup</p>
+          <h2>I will collect my order on</h2>
+          <form class="booking-form" action="#" method="post">
+            <label>
+              Date
+              <input type="date" name="pickup-date" required />
+            </label>
+            <label>
+              Time
+              <select name="pickup-time" required>
+                <option value="">Select time</option>
+                <option>09:00</option>
+                <option>10:30</option>
+                <option>12:00</option>
+                <option>14:30</option>
+                <option>16:00</option>
+                <option>18:30</option>
+              </select>
+            </label>
+            <label>
+              Guests
+              <select name="guests">
+                <option>1-2</option>
+                <option>3-4</option>
+                <option>5-6</option>
+                <option>7+</option>
+              </select>
+            </label>
+            <button class="btn primary" type="submit">Confirm slot</button>
+          </form>
+          <p class="booking-note" id="booking-note">
+            Slots update every morning. We will confirm by email.
+          </p>
+        </div>
+        <div class="booking-details">
+          <h3>Seasonal Collections</h3>
+          <p>
+            Limited batches, refined flavors, and a curated menu that evolves
+            each week. We focus on precision, minimalism, and clean finishes.
+          </p>
+          <div class="detail-grid">
+            <div>
+              <span class="detail-label">Next drop</span>
+              <span>Friday · 10:00 am</span>
+            </div>
+            <div>
+              <span class="detail-label">Pickup window</span>
+              <span>08:00 am - 07:00 pm</span>
+            </div>
+            <div>
+              <span class="detail-label">Order deadline</span>
+              <span>48 hours before</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="seasonal" id="seasonal">
+        <div class="section-head">
+          <p class="kicker">Our seasonal creations</p>
+          <h2>Delicate structures, bold fruits.</h2>
+          <p>
+            A rotating selection of tarts, entremets, and petits gateaux inspired
+            by the season.
+          </p>
+        </div>
+        <div class="card-grid">
+          <article class="card">
+            <img
+              src="https://images.unsplash.com/photo-1542826438-bd32f43d626f?auto=format&fit=crop&w=900&q=80"
+              alt="Raspberry tart"
+            />
+            <div class="card-body">
+              <h3>Raspberry Rose</h3>
+              <p>Almond cream, rose chantilly, crisp sable.</p>
+            </div>
+          </article>
+          <article class="card">
+            <img
+              src="https://images.unsplash.com/photo-1505253213348-790f9f02f69b?auto=format&fit=crop&w=900&q=80"
+              alt="Citrus tart"
+            />
+            <div class="card-body">
+              <h3>Citrus Bloom</h3>
+              <p>Lemon curd, bergamot, vanilla crème.</p>
+            </div>
+          </article>
+          <article class="card">
+            <img
+              src="https://images.unsplash.com/photo-1514517604298-cf80e0fb7f85?auto=format&fit=crop&w=900&q=80"
+              alt="Chocolate entremet"
+            />
+            <div class="card-body">
+              <h3>Noir Intense</h3>
+              <p>70% cocoa, hazelnut praline, crunch.</p>
+            </div>
+          </article>
+          <article class="card">
+            <img
+              src="https://images.unsplash.com/photo-1509440159596-0249088772ff?auto=format&fit=crop&w=900&q=80"
+              alt="Strawberry entremet"
+            />
+            <div class="card-body">
+              <h3>Strawberry Cloud</h3>
+              <p>Chantilly, basil gel, almond sponge.</p>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section class="maison" id="maison">
+        <div class="maison-copy">
+          <p class="kicker">Our maison</p>
+          <h2>Quiet luxury, careful detail.</h2>
+          <p>
+            Atelier Gourmand by OC is a small batch patisserie dedicated to
+            elevated flavors and balanced composition. We keep the palette
+            minimal and the textures refined.
+          </p>
+          <div class="maison-actions">
+            <a class="btn ghost" href="#collect">Discover the atelier</a>
+          </div>
+        </div>
+        <div class="maison-media">
+          <img
+            src="https://images.unsplash.com/photo-1515823662972-da6a2e4d3002?auto=format&fit=crop&w=1200&q=80"
+            alt="Pastry chef working"
+          />
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div>
+        <h3>Atelier Gourmand by OC</h3>
+        <p>Wilton Place, SW1X 7RL · London</p>
+      </div>
+      <div>
+        <p class="footer-label">Contact</p>
+        <p>hello@ateliergourmandbyoc.co.uk</p>
+      </div>
+      <div>
+        <p class="footer-label">Social</p>
+        <p>Instagram · @ateliergourmandbyoc</p>
+      </div>
+    </footer>
+
+    <script src="script.js"></script>
+  </body>
+</html>

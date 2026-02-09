@@ -1,0 +1,209 @@
+{% extends "admin/base.html" %}
+
+{% block title %}Availability Management{% endblock %}
+
+{% block content %}
+<h1 style="margin-bottom: 2rem; font-size: 2rem;">Availability Management</h1>
+
+<!-- Booking Settings -->
+<div class="card">
+    <h2>Booking Settings</h2>
+    <form method="POST" action="{{ url_for('admin_booking_settings') }}">
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1.5rem;">
+            <div class="form-group">
+                <label>Max Bookings Per Slot</label>
+                <input type="number" name="max_bookings_per_slot" value="{{ settings.max_bookings_per_slot }}" min="1" required>
+            </div>
+            <div class="form-group">
+                <label>Advance Booking (days)</label>
+                <input type="number" name="advance_booking_days" value="{{ settings.advance_booking_days }}" min="1" required>
+            </div>
+            <div class="form-group">
+                <label>Min Advance Notice (hours)</label>
+                <input type="number" name="min_advance_hours" value="{{ settings.min_advance_hours }}" min="1" required>
+            </div>
+        </div>
+        <div class="form-group">
+            <div class="form-check">
+                <input type="checkbox" name="booking_enabled" id="booking_enabled" {% if settings.booking_enabled %}checked{% endif %}>
+                <label for="booking_enabled">Enable bookings (uncheck to disable all bookings)</label>
+            </div>
+        </div>
+        <button type="submit" class="btn btn-primary">Save Settings</button>
+    </form>
+</div>
+
+<!-- Time Slots Management -->
+<div class="card">
+    <h2>Available Time Slots</h2>
+    <p style="color: #6c757d; margin-bottom: 1.5rem;">Define what time slots customers can choose from.</p>
+    
+    <form method="POST" action="{{ url_for('admin_add_timeslot') }}" style="background: #f8f9fa; padding: 1.5rem; border-radius: 8px; margin-bottom: 1.5rem;">
+        <h3 style="font-size: 1rem; margin-bottom: 1rem;">Add New Time Slot</h3>
+        <div style="display: grid; grid-template-columns: 2fr 1fr auto; gap: 1rem; align-items: end;">
+            <div class="form-group" style="margin: 0;">
+                <label>Time (HH:MM)</label>
+                <input type="time" name="time_slot" required>
+            </div>
+            <div class="form-group" style="margin: 0;">
+                <label>Display Order</label>
+                <input type="number" name="order" value="0">
+            </div>
+            <div class="form-group" style="margin: 0;">
+                <div class="form-check">
+                    <input type="checkbox" name="is_active" id="new_slot_active" checked>
+                    <label for="new_slot_active">Active</label>
+                </div>
+            </div>
+        </div>
+        <button type="submit" class="btn btn-primary" style="margin-top: 1rem;">Add Time Slot</button>
+    </form>
+    
+    {% if slots %}
+    <table>
+        <thead>
+            <tr>
+                <th>Time</th>
+                <th>Order</th>
+                <th>Status</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for slot in slots %}
+            <tr>
+                <td><strong>{{ slot.time_slot }}</strong></td>
+                <td>{{ slot.order }}</td>
+                <td>
+                    {% if slot.is_active %}
+                    <span style="color: #28a745;">Active</span>
+                    {% else %}
+                    <span style="color: #dc3545;">Inactive</span>
+                    {% endif %}
+                </td>
+                <td>
+                    <form method="POST" action="{{ url_for('admin_toggle_timeslot', id=slot.id) }}" style="display: inline;">
+                        <button type="submit" class="btn" style="padding: 0.5rem 1rem; font-size: 0.875rem;">
+                            {% if slot.is_active %}Disable{% else %}Enable{% endif %}
+                        </button>
+                    </form>
+                    <form method="POST" action="{{ url_for('admin_delete_timeslot', id=slot.id) }}" style="display: inline;" onsubmit="return confirm('Delete this time slot?')">
+                        <button type="submit" class="btn btn-danger" style="padding: 0.5rem 1rem; font-size: 0.875rem;">Delete</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p style="color: #6c757d; text-align: center; padding: 2rem;">No time slots configured. Add your first time slot above.</p>
+    {% endif %}
+</div>
+
+<!-- Block Entire Days -->
+<div class="card">
+    <h2>Block Entire Days</h2>
+    <p style="color: #6c757d; margin-bottom: 1.5rem;">Block specific dates (holidays, vacations, etc.)</p>
+    
+    <form method="POST" action="{{ url_for('admin_block_date') }}" style="background: #f8f9fa; padding: 1.5rem; border-radius: 8px; margin-bottom: 1.5rem;">
+        <h3 style="font-size: 1rem; margin-bottom: 1rem;">Block a Date</h3>
+        <div style="display: grid; grid-template-columns: 1fr 2fr auto; gap: 1rem; align-items: end;">
+            <div class="form-group" style="margin: 0;">
+                <label>Date</label>
+                <input type="date" name="date" required>
+            </div>
+            <div class="form-group" style="margin: 0;">
+                <label>Reason (optional)</label>
+                <input type="text" name="reason" placeholder="e.g., Christmas Day, Vacation">
+            </div>
+            <button type="submit" class="btn btn-primary">Block Date</button>
+        </div>
+    </form>
+    
+    {% if blocked_dates %}
+    <table>
+        <thead>
+            <tr>
+                <th>Date</th>
+                <th>Reason</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for blocked in blocked_dates %}
+            <tr>
+                <td><strong>{{ blocked.date.strftime('%Y-%m-%d (%A)') }}</strong></td>
+                <td>{{ blocked.reason or '-' }}</td>
+                <td>
+                    <form method="POST" action="{{ url_for('admin_unblock_date', id=blocked.id) }}" style="display: inline;" onsubmit="return confirm('Unblock this date?')">
+                        <button type="submit" class="btn btn-danger" style="padding: 0.5rem 1rem; font-size: 0.875rem;">Unblock</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p style="color: #6c757d; text-align: center; padding: 2rem;">No blocked dates</p>
+    {% endif %}
+</div>
+
+<!-- Block Specific Time Slots -->
+<div class="card">
+    <h2>Block Specific Time Slots</h2>
+    <p style="color: #6c757d; margin-bottom: 1.5rem;">Block individual time slots on specific dates.</p>
+    
+    <form method="POST" action="{{ url_for('admin_block_slot') }}" style="background: #f8f9fa; padding: 1.5rem; border-radius: 8px; margin-bottom: 1.5rem;">
+        <h3 style="font-size: 1rem; margin-bottom: 1rem;">Block a Time Slot</h3>
+        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 1rem; align-items: end;">
+            <div class="form-group" style="margin: 0;">
+                <label>Date</label>
+                <input type="date" name="date" required>
+            </div>
+            <div class="form-group" style="margin: 0;">
+                <label>Time Slot</label>
+                <select name="time_slot" required>
+                    {% for slot in slots %}
+                    <option>{{ slot.time_slot }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group" style="margin: 0;">
+                <label>Reason (optional)</label>
+                <input type="text" name="reason" placeholder="e.g., Fully booked">
+            </div>
+            <button type="submit" class="btn btn-primary">Block Slot</button>
+        </div>
+    </form>
+    
+    {% if blocked_slots %}
+    <table>
+        <thead>
+            <tr>
+                <th>Date</th>
+                <th>Time Slot</th>
+                <th>Reason</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for blocked in blocked_slots %}
+            <tr>
+                <td>{{ blocked.date.strftime('%Y-%m-%d (%a)') }}</td>
+                <td><strong>{{ blocked.time_slot }}</strong></td>
+                <td>{{ blocked.reason or '-' }}</td>
+                <td>
+                    <form method="POST" action="{{ url_for('admin_unblock_slot', id=blocked.id) }}" style="display: inline;" onsubmit="return confirm('Unblock this slot?')">
+                        <button type="submit" class="btn btn-danger" style="padding: 0.5rem 1rem; font-size: 0.875rem;">Unblock</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p style="color: #6c757d; text-align: center; padding: 2rem;">No blocked time slots</p>
+    {% endif %}
+</div>
+
+{% endblock %}

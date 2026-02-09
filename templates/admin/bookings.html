@@ -1,0 +1,63 @@
+{% extends "admin/base.html" %}
+
+{% block title %}Bookings{% endblock %}
+
+{% block content %}
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
+    <h1 style="font-size: 2rem;">Bookings</h1>
+    <div style="display: flex; gap: 0.5rem;">
+        <a href="{{ url_for('admin_bookings', status='all') }}" class="btn {% if current_status == 'all' %}btn-primary{% endif %}" style="padding: 0.5rem 1rem;">All</a>
+        <a href="{{ url_for('admin_bookings', status='pending') }}" class="btn {% if current_status == 'pending' %}btn-primary{% endif %}" style="padding: 0.5rem 1rem;">Pending</a>
+        <a href="{{ url_for('admin_bookings', status='confirmed') }}" class="btn {% if current_status == 'confirmed' %}btn-primary{% endif %}" style="padding: 0.5rem 1rem;">Confirmed</a>
+        <a href="{{ url_for('admin_bookings', status='cancelled') }}" class="btn {% if current_status == 'cancelled' %}btn-primary{% endif %}" style="padding: 0.5rem 1rem;">Cancelled</a>
+    </div>
+</div>
+
+<div class="card">
+    {% if bookings %}
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Pickup Date</th>
+                <th>Time</th>
+                <th>Contact</th>
+                <th>Status</th>
+                <th>Created</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for booking in bookings %}
+            <tr>
+                <td>{{ booking.id }}</td>
+                <td>{{ booking.pickup_date.strftime('%Y-%m-%d') }}</td>
+                <td>{{ booking.pickup_time }}</td>
+                <td>
+                    {% if booking.email %}<small>{{ booking.email }}</small><br>{% endif %}
+                    {% if booking.phone %}<small>{{ booking.phone }}</small>{% endif %}
+                </td>
+                <td>
+                    <form method="POST" action="{{ url_for('admin_booking_status', id=booking.id) }}" style="display: inline;">
+                        <select name="status" onchange="this.form.submit()" style="padding: 0.5rem; border-radius: 8px; border: 1px solid #ced4da;">
+                            <option value="pending" {% if booking.status == 'pending' %}selected{% endif %}>Pending</option>
+                            <option value="confirmed" {% if booking.status == 'confirmed' %}selected{% endif %}>Confirmed</option>
+                            <option value="cancelled" {% if booking.status == 'cancelled' %}selected{% endif %}>Cancelled</option>
+                        </select>
+                    </form>
+                </td>
+                <td><small>{{ booking.created_at.strftime('%Y-%m-%d %H:%M') }}</small></td>
+                <td>
+                    {% if booking.notes %}
+                    <button onclick="alert('{{ booking.notes }}')" class="btn" style="padding: 0.5rem 1rem; font-size: 0.875rem;">View Notes</button>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p style="color: #6c757d; text-align: center; padding: 2rem;">No bookings found</p>
+    {% endif %}
+</div>
+{% endblock %}

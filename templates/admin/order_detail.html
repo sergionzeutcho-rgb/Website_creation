@@ -1,0 +1,143 @@
+{% extends "admin/base.html" %}
+
+{% block title %}Order {{ order.order_number }} - Admin{% endblock %}
+
+{% block content %}
+<div style="margin-bottom: 32px">
+  <a href="{{ url_for('admin_orders') }}" style="color: #c5a572; text-decoration: none">← Back to orders</a>
+  <h1 style="font-size: 32px; font-weight: 600; margin-top: 12px">Order {{ order.order_number }}</h1>
+</div>
+
+<div style="display: grid; grid-template-columns: 1fr 400px; gap: 32px">
+  <!-- Order Details -->
+  <div>
+    <div style="background: white; border-radius: 8px; padding: 32px; margin-bottom: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.1)">
+      <h2 style="font-size: 20px; font-weight: 600; margin-bottom: 24px; padding-bottom: 16px; border-bottom: 2px solid #c5a572">Customer Information</h2>
+      
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px">
+        <div>
+          <div style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: #6c757d; margin-bottom: 4px">Name</div>
+          <div style="font-weight: 600">{{ order.customer_name }}</div>
+        </div>
+        <div>
+          <div style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: #6c757d; margin-bottom: 4px">Email</div>
+          <div>{{ order.customer_email }}</div>
+        </div>
+        {% if order.customer_phone %}
+        <div>
+          <div style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: #6c757d; margin-bottom: 4px">Phone</div>
+          <div>{{ order.customer_phone }}</div>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div style="background: white; border-radius: 8px; padding: 32px; margin-bottom: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.1)">
+      <h2 style="font-size: 20px; font-weight: 600; margin-bottom: 24px; padding-bottom: 16px; border-bottom: 2px solid #c5a572">Pickup Information</h2>
+      
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px">
+        <div>
+          <div style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: #6c757d; margin-bottom: 4px">Date</div>
+          <div style="font-weight: 600">{{ order.pickup_date.strftime('%B %d, %Y') }}</div>
+        </div>
+        <div>
+          <div style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: #6c757d; margin-bottom: 4px">Time</div>
+          <div style="font-weight: 600">{{ order.pickup_time }}</div>
+        </div>
+      </div>
+
+      {% if order.notes %}
+      <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #dee2e6">
+        <div style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: #6c757d; margin-bottom: 8px">Customer Notes</div>
+        <div style="background: #f8f9fa; padding: 16px; border-radius: 4px">{{ order.notes }}</div>
+      </div>
+      {% endif %}
+    </div>
+
+    <div style="background: white; border-radius: 8px; padding: 32px; box-shadow: 0 1px 3px rgba(0,0,0,0.1)">
+      <h2 style="font-size: 20px; font-weight: 600; margin-bottom: 24px; padding-bottom: 16px; border-bottom: 2px solid #c5a572">Order Items</h2>
+      
+      {% for item in order.items %}
+      <div style="display: flex; justify-content: space-between; padding: 16px 0; border-bottom: 1px solid #dee2e6; {% if loop.last %}border-bottom: none;{% endif %}">
+        <div>
+          <div style="font-weight: 600; margin-bottom: 4px">{{ item.product_name }}</div>
+          {% if item.variant_name %}<div style="font-size: 14px; color: #6c757d">{{ item.variant_name }}</div>{% endif %}
+          <div style="font-size: 14px; color: #6c757d">Qty: {{ item.quantity }} × £{{ "%.2f"|format(item.unit_price) }}</div>
+        </div>
+        <div style="font-weight: 600">£{{ "%.2f"|format(item.total_price) }}</div>
+      </div>
+      {% endfor %}
+
+      <div style="padding-top: 20px; margin-top: 20px; border-top: 2px solid #c5a572">
+        <div style="display: flex; justify-content: space-between; margin-bottom: 8px">
+          <span>Subtotal:</span>
+          <span>£{{ "%.2f"|format(order.subtotal) }}</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; margin-bottom: 16px">
+          <span>Tax:</span>
+          <span>£{{ "%.2f"|format(order.tax) }}</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; font-size: 20px; font-weight: 700; color: #c5a572">
+          <span>Total:</span>
+          <span>£{{ "%.2f"|format(order.total) }}</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Status Update -->
+  <div>
+    <form action="{{ url_for('admin_update_order_status', id=order.id) }}" method="POST" style="background: white; border-radius: 8px; padding: 32px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); position: sticky; top: 100px">
+      <h2 style="font-size: 20px; font-weight: 600; margin-bottom: 24px">Update Order</h2>
+      
+      <div style="margin-bottom: 20px">
+        <label for="status" style="display: block; margin-bottom: 8px; font-weight: 500">Order Status</label>
+        <select id="status" name="status" style="width: 100%; padding: 12px; border: 1px solid #dee2e6; border-radius: 4px; font-size: 16px">
+          <option value="pending" {% if order.status == 'pending' %}selected{% endif %}>Pending</option>
+          <option value="confirmed" {% if order.status == 'confirmed' %}selected{% endif %}>Confirmed</option>
+          <option value="preparing" {% if order.status == 'preparing' %}selected{% endif %}>Preparing</option>
+          <option value="ready" {% if order.status == 'ready' %}selected{% endif %}>Ready for Pickup</option>
+          <option value="completed" {% if order.status == 'completed' %}selected{% endif %}>Completed</option>
+          <option value="cancelled" {% if order.status == 'cancelled' %}selected{% endif %}>Cancelled</option>
+        </select>
+      </div>
+
+      <div style="margin-bottom: 20px">
+        <label for="payment_status" style="display: block; margin-bottom: 8px; font-weight: 500">Payment Status</label>
+        <select id="payment_status" name="payment_status" style="width: 100%; padding: 12px; border: 1px solid #dee2e6; border-radius: 4px; font-size: 16px">
+          <option value="pending" {% if order.payment_status == 'pending' %}selected{% endif %}>Pending</option>
+          <option value="paid" {% if order.payment_status == 'paid' %}selected{% endif %}>Paid</option>
+          <option value="failed" {% if order.payment_status == 'failed' %}selected{% endif %}>Failed</option>
+          <option value="refunded" {% if order.payment_status == 'refunded' %}selected{% endif %}>Refunded</option>
+        </select>
+      </div>
+
+      <div style="margin-bottom: 20px">
+        <label for="admin_notes" style="display: block; margin-bottom: 8px; font-weight: 500">Admin Notes</label>
+        <textarea id="admin_notes" name="admin_notes" rows="4" style="width: 100%; padding: 12px; border: 1px solid #dee2e6; border-radius: 4px; font-size: 16px">{{ order.admin_notes or '' }}</textarea>
+      </div>
+
+      <button type="submit" style="width: 100%; padding: 12px; background: #c5a572; color: white; border: none; border-radius: 4px; font-size: 16px; font-weight: 600; cursor: pointer">
+        Update Order
+      </button>
+
+      <div style="margin-top: 24px; padding-top: 24px; border-top: 1px solid #dee2e6">
+        <div style="font-size: 12px; color: #6c757d; margin-bottom: 4px">Payment Method</div>
+        <div style="font-weight: 600">{{ order.payment_method|replace('_', ' ')|title }}</div>
+      </div>
+
+      <div style="margin-top: 16px">
+        <div style="font-size: 12px; color: #6c757d; margin-bottom: 4px">Order Created</div>
+        <div>{{ order.created_at.strftime('%Y-%m-%d %H:%M') }}</div>
+      </div>
+
+      {% if order.updated_at %}
+      <div style="margin-top: 16px">
+        <div style="font-size: 12px; color: #6c757d; margin-bottom: 4px">Last Updated</div>
+        <div>{{ order.updated_at.strftime('%Y-%m-%d %H:%M') }}</div>
+      </div>
+      {% endif %}
+    </form>
+  </div>
+</div>
+{% endblock %}

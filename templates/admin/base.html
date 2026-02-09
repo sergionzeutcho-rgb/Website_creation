@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}Admin{% endblock %} - Atelier Gourmand</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: #f8f9fa;
+            color: #212529;
+        }
+        
+        .admin-nav {
+            background: #0a0908;
+            color: white;
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .admin-nav h1 {
+            font-size: 1.25rem;
+            font-weight: 600;
+        }
+        
+        .admin-nav a {
+            color: #c5a572;
+            text-decoration: none;
+            margin-left: 1.5rem;
+        }
+        
+        .admin-container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+        
+        .admin-sidebar {
+            position: fixed;
+            left: 0;
+            top: 60px;
+            width: 250px;
+            height: calc(100vh - 60px);
+            background: white;
+            border-right: 1px solid #dee2e6;
+            padding: 2rem 1rem;
+        }
+        
+        .admin-sidebar a {
+            display: block;
+            padding: 0.75rem 1rem;
+            color: #495057;
+            text-decoration: none;
+            border-radius: 8px;
+            margin-bottom: 0.5rem;
+            transition: all 0.2s;
+        }
+        
+        .admin-sidebar a:hover,
+        .admin-sidebar a.active {
+            background: #f8f9fa;
+            color: #c5a572;
+        }
+        
+        .admin-content {
+            margin-left: 270px;
+            padding: 2rem;
+        }
+        
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 2rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        }
+        
+        .card h2 {
+            margin-bottom: 1.5rem;
+            font-size: 1.5rem;
+        }
+        
+        .btn {
+            display: inline-block;
+            padding: 0.75rem 1.5rem;
+            background: #0a0908;
+            color: white;
+            text-decoration: none;
+            border-radius: 8px;
+            border: none;
+            cursor: pointer;
+            font-size: 0.95rem;
+            transition: all 0.2s;
+        }
+        
+        .btn:hover {
+            background: #2a2826;
+        }
+        
+        .btn-primary {
+            background: #c5a572;
+        }
+        
+        .btn-primary:hover {
+            background: #8b7355;
+        }
+        
+        .btn-danger {
+            background: #dc3545;
+        }
+        
+        .btn-danger:hover {
+            background: #c82333;
+        }
+        
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 500;
+            color: #495057;
+        }
+        
+        .form-group input,
+        .form-group textarea,
+        .form-group select {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid #ced4da;
+            border-radius: 8px;
+            font-size: 1rem;
+        }
+        
+        .form-group textarea {
+            min-height: 120px;
+            resize: vertical;
+        }
+        
+        .form-check {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .form-check input {
+            width: auto;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        
+        table th,
+        table td {
+            padding: 1rem;
+            text-align: left;
+            border-bottom: 1px solid #dee2e6;
+        }
+        
+        table th {
+            font-weight: 600;
+            color: #495057;
+        }
+        
+        table img {
+            width: 60px;
+            height: 60px;
+            object-fit: cover;
+            border-radius: 8px;
+        }
+        
+        .flash-messages {
+            position: fixed;
+            top: 80px;
+            right: 2rem;
+            z-index: 1000;
+            max-width: 400px;
+        }
+        
+        .flash {
+            padding: 1rem 1.5rem;
+            margin-bottom: 1rem;
+            border-radius: 8px;
+            background: white;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+        
+        .flash.success {
+            border-left: 4px solid #28a745;
+        }
+        
+        .flash.error {
+            border-left: 4px solid #dc3545;
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+        
+        .stat-card {
+            background: white;
+            padding: 1.5rem;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        }
+        
+        .stat-card h3 {
+            font-size: 0.875rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: #6c757d;
+            margin-bottom: 0.5rem;
+        }
+        
+        .stat-card .value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: #c5a572;
+        }
+        
+        .image-preview {
+            max-width: 300px;
+            margin-top: 1rem;
+            border-radius: 8px;
+        }
+    </style>
+    {% block extra_css %}{% endblock %}
+    {% block head %}{% endblock %}
+</head>
+<body>
+    <nav class="admin-nav">
+        <h1>Atelier Gourmand - Admin</h1>
+        <div>
+            <a href="{{ url_for('index') }}">View Site</a>
+            <a href="{{ url_for('admin_logout') }}">Logout</a>
+        </div>
+    </nav>
+    
+    {% if get_flashed_messages() %}
+    <div class="flash-messages">
+        {% for category, message in get_flashed_messages(with_categories=true) %}
+        <div class="flash {{ category }}">{{ message }}</div>
+        {% endfor %}
+    </div>
+    {% endif %}
+    
+    <div class="admin-sidebar">
+        <a href="{{ url_for('admin_dashboard') }}" class="{% if request.endpoint == 'admin_dashboard' %}active{% endif %}">📊 Dashboard</a>
+        <a href="{{ url_for('admin_products') }}" class="{% if 'product' in request.endpoint %}active{% endif %}">📦 Products</a>
+        <a href="{{ url_for('admin_orders') }}" class="{% if 'order' in request.endpoint %}active{% endif %}">🛒 Orders</a>
+        <a href="{{ url_for('admin_discounts') }}" class="{% if 'discount' in request.endpoint %}active{% endif %}">🎟️ Discounts</a>
+        <a href="{{ url_for('admin_delivery') }}" class="{% if 'delivery' in request.endpoint %}active{% endif %}">🚚 Delivery</a>
+        <a href="{{ url_for('admin_bookings') }}" class="{% if request.endpoint == 'admin_bookings' %}active{% endif %}">📅 Bookings</a>
+        <a href="{{ url_for('admin_availability') }}" class="{% if 'availability' in request.endpoint %}active{% endif %}">⏰ Availability</a>
+        <a href="{{ url_for('admin_navigation') }}" class="{% if 'navigation' in request.endpoint %}active{% endif %}">🔗 Navigation</a>
+        <a href="{{ url_for('admin_hero') }}" class="{% if request.endpoint == 'admin_hero' %}active{% endif %}">🎨 Hero Section</a>
+        <a href="{{ url_for('admin_maison') }}" class="{% if request.endpoint == 'admin_maison' %}active{% endif %}">🏛️ Maison Section</a>
+        <a href="{{ url_for('admin_settings') }}" class="{% if request.endpoint == 'admin_settings' %}active{% endif %}">⚙️ Settings</a>
+    </div>
+    
+    <div class="admin-content">
+        {% block content %}{% endblock %}
+    </div>
+    
+    <script>
+        // Auto-hide flash messages after 5 seconds
+        setTimeout(() => {
+            document.querySelectorAll('.flash').forEach(el => {
+                el.style.opacity = '0';
+                el.style.transition = 'opacity 0.3s';
+                setTimeout(() => el.remove(), 300);
+            });
+        }, 5000);
+        
+        // Image preview
+        document.querySelectorAll('input[type="file"]').forEach(input => {
+            input.addEventListener('change', function(e) {
+                const file = e.target.files[0];
+                if (file && file.type.startsWith('image/')) {
+                    const reader = new FileReader();
+                    reader.onload = function(e) {
+                        let preview = input.parentElement.querySelector('.image-preview');
+                        if (!preview) {
+                            preview = document.createElement('img');
+                            preview.className = 'image-preview';
+                            input.parentElement.appendChild(preview);
+                        }
+                        preview.src = e.target.result;
+                    };
+                    reader.readAsDataURL(file);
+                }
+            });
+        });
+    </script>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

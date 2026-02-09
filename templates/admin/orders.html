@@ -1,0 +1,78 @@
+{% extends "admin/base.html" %}
+
+{% block title %}Orders - Admin{% endblock %}
+
+{% block content %}
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 32px">
+  <h1 style="font-size: 32px; font-weight: 600">Orders</h1>
+</div>
+
+{% if orders %}
+<div style="background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1)">
+  <table style="width: 100%; border-collapse: collapse">
+    <thead style="background: #f8f9fa; border-bottom: 2px solid #dee2e6">
+      <tr>
+        <th style="padding: 16px; text-align: left; font-weight: 600">Order #</th>
+        <th style="padding: 16px; text-align: left; font-weight: 600">Customer</th>
+        <th style="padding: 16px; text-align: left; font-weight: 600">Pickup</th>
+        <th style="padding: 16px; text-align: left; font-weight: 600">Total</th>
+        <th style="padding: 16px; text-align: left; font-weight: 600">Status</th>
+        <th style="padding: 16px; text-align: left; font-weight: 600">Payment</th>
+        <th style="padding: 16px; text-align: left; font-weight: 600">Date</th>
+        <th style="padding: 16px; text-align: right; font-weight: 600">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for order in orders %}
+      <tr style="border-bottom: 1px solid #dee2e6">
+        <td style="padding: 16px">
+          <a href="{{ url_for('admin_order_detail', id=order.id) }}" style="color: #c5a572; text-decoration: none; font-weight: 600">
+            {{ order.order_number }}
+          </a>
+        </td>
+        <td style="padding: 16px">
+          <div style="font-weight: 500">{{ order.customer_name }}</div>
+          <div style="font-size: 13px; color: #6c757d">{{ order.customer_email }}</div>
+        </td>
+        <td style="padding: 16px">
+          <div>{{ order.pickup_date.strftime('%Y-%m-%d') }}</div>
+          <div style="font-size: 13px; color: #6c757d">{{ order.pickup_time }}</div>
+        </td>
+        <td style="padding: 16px; font-weight: 600">£{{ "%.2f"|format(order.total) }}</td>
+        <td style="padding: 16px">
+          <span style="padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 600; 
+            {% if order.status == 'completed' %}background: #d4edda; color: #155724;
+            {% elif order.status == 'ready' %}background: #d1ecf1; color: #0c5460;
+            {% elif order.status == 'preparing' %}background: #fff3cd; color: #856404;
+            {% elif order.status == 'cancelled' %}background: #f8d7da; color: #721c24;
+            {% else %}background: #e2e3e5; color: #383d41;{% endif %}">
+            {{ order.status|title }}
+          </span>
+        </td>
+        <td style="padding: 16px">
+          <span style="padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 600;
+            {% if order.payment_status == 'paid' %}background: #d4edda; color: #155724;
+            {% elif order.payment_status == 'failed' %}background: #f8d7da; color: #721c24;
+            {% else %}background: #fff3cd; color: #856404;{% endif %}">
+            {{ order.payment_status|title }}
+          </span>
+        </td>
+        <td style="padding: 16px; font-size: 13px; color: #6c757d">
+          {{ order.created_at.strftime('%Y-%m-%d %H:%M') }}
+        </td>
+        <td style="padding: 16px; text-align: right">
+          <a href="{{ url_for('admin_order_detail', id=order.id) }}" style="color: #c5a572; text-decoration: none; font-size: 14px">
+            View →
+          </a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div style="text-align: center; padding: 60px 20px; background: white; border-radius: 8px">
+  <p style="color: #6c757d; margin-bottom: 16px">No orders yet</p>
+</div>
+{% endif %}
+{% endblock %}

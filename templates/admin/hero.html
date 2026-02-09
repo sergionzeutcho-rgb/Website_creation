@@ -1,0 +1,89 @@
+{% extends "admin/base.html" %}
+
+{% block title %}Hero Section{% endblock %}
+
+{% block head %}
+{{ super() }}
+{{ ckeditor.load() }}
+{{ ckeditor.config(name='description') }}
+{% endblock %}
+
+{% block content %}
+<h1 style="margin-bottom: 2rem; font-size: 2rem;">Hero Section</h1>
+
+<div class="card">
+    <form method="POST" enctype="multipart/form-data">
+        <div class="form-group">
+            <label>Media Type</label>
+            <select name="media_type" id="media_type" onchange="toggleMediaType()">
+                <option value="image" {% if not hero or not hero.media_type or hero.media_type == 'image' %}selected{% endif %}>Image</option>
+                <option value="video" {% if hero and hero.media_type == 'video' %}selected{% endif %}>Video</option>
+            </select>
+        </div>
+        
+        <div class="form-group" id="image_upload">
+            <label>Hero Image</label>
+            <input type="file" name="image" accept="image/*">
+            {% if hero and hero.image_url and hero.media_type == 'image' %}
+            <img src="{{ hero.image_url }}" class="image-preview" alt="Current hero image">
+            {% endif %}
+        </div>
+        
+        <div class="form-group" id="video_upload" style="display: none;">
+            <label>Hero Video (MP4, MOV, AVI)</label>
+            <input type="file" name="video" accept="video/*">
+            {% if hero and hero.video_url and hero.media_type == 'video' %}
+            <video src="{{ hero.video_url }}" class="image-preview" controls></video>
+            {% endif %}
+        </div>
+        
+        <div class="form-group">
+            <label>Title</label>
+            <input type="text" name="title" value="{{ hero.title if hero else '' }}">
+        </div>
+        
+        <div class="form-group">
+            <label>Subtitle</label>
+            <input type="text" name="subtitle" value="{{ hero.subtitle if hero else '' }}">
+        </div>
+        
+        <div class="form-group">
+            <label>Description</label>
+            {{ ckeditor.create(name='description', value=hero.description if hero else '') }}
+        </div>
+        
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem;">
+            <div class="form-group">
+                <label>Location</label>
+                <input type="text" name="location" value="{{ hero.location if hero else '' }}" placeholder="Wilton Place, SW1X 7RL · London">
+            </div>
+            
+            <div class="form-group">
+                <label>Hours</label>
+                <input type="text" name="hours" value="{{ hero.hours if hero else '' }}" placeholder="08:00 am to 07:00 pm">
+            </div>
+        </div>
+        
+        <button type="submit" class="btn btn-primary">Save Changes</button>
+    </form>
+</div>
+
+<script>
+function toggleMediaType() {
+    const mediaType = document.getElementById('media_type').value;
+    const imageUpload = document.getElementById('image_upload');
+    const videoUpload = document.getElementById('video_upload');
+    
+    if (mediaType === 'image') {
+        imageUpload.style.display = 'block';
+        videoUpload.style.display = 'none';
+    } else {
+        imageUpload.style.display = 'none';
+        videoUpload.style.display = 'block';
+    }
+}
+
+// Initialize on load
+toggleMediaType();
+</script>
+{% endblock %}
