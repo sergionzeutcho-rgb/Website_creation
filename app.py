@@ -17,6 +17,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.utils import secure_filename
 from datetime import datetime, date, timedelta
+from sqlalchemy import func
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -59,16 +60,27 @@ def build_order_confirmation_body(order):
         'Thank you for your order with Atelier Gourmand by OC!',
         '',
         f'Order number: {order.order_number}',
-        f'Pickup date: {order.pickup_date}',
-        f'Pickup time: {order.pickup_time}',
-        '',
-        'Items:'
+        f'Fulfillment: {order.fulfillment_method}',
+        f'Date: {order.pickup_date}',
+        f'Time: {order.pickup_time}',
     ]
+    if order.fulfillment_method == 'delivery':
+        lines.append(f'Delivery address: {order.delivery_address or "(not provided)"}')
+        if order.delivery_postcode:
+            lines.append(f'Postcode: {order.delivery_postcode}')
+    lines.append('')
+    lines.append('Items:')
     for item in order.items:
         line_total = item.total_price
         lines.append(f"- {item.product_name} x{item.quantity} ({currency_symbol}{line_total:.2f})")
     lines.extend([
         '',
+        f'Subtotal: {currency_symbol}{order.subtotal:.2f}',
+        f'Tax: {currency_symbol}{order.tax:.2f}',
+    ])
+    if order.fulfillment_method == 'delivery':
+        lines.append(f'Delivery fee: {currency_symbol}{(order.delivery_fee or 0):.2f}')
+    lines.extend([
         f'Total: {currency_symbol}{order.total:.2f}',
         '',
         f"Special instructions: {order.notes or 'None'}",
@@ -141,6 +153,9 @@ def render_invoice_template(order, settings, currency_symbol, invoice_number, in
 app = Flask(__name__)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 
+# Ensure instance folder exists for SQLite and uploads
+os.makedirs(app.instance_path, exist_ok=True)
+
 secret_key = os.getenv('SECRET_KEY')
 if not secret_key:
     if os.getenv('FLASK_ENV') == 'production':
@@ -148,7 +163,18 @@ if not secret_key:
     secret_key = 'dev-secret-key-change-in-production'
 
 app.config['SECRET_KEY'] = secret_key
-app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'sqlite:///atelier.db')
+env_db_url = os.getenv('DATABASE_URL')
+if env_db_url and env_db_url.startswith('sqlite:///'):
+    path = env_db_url.replace('sqlite:///', '')
+    if not os.path.isabs(path):
+        path = os.path.join(app.root_path, path)
+    db_url = f"sqlite:///{path.replace('\\', '/')}"
+elif env_db_url:
+    db_url = env_db_url
+else:
+    default_db_path = os.path.join(app.instance_path, 'atelier.db')
+    db_url = f"sqlite:///{default_db_path.replace('\\', '/')}"
+app.config['SQLALCHEMY_DATABASE_URI'] = db_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['UPLOAD_FOLDER'] = os.getenv('UPLOAD_FOLDER', 'static/uploads')
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
@@ -569,9 +595,35 @@ def api_confirm_pickup():
 
 @app.route('/api/available-slots')
 def api_available_slots():
-    """Get available time slots sorted chronologically"""
-    slots = AvailableTimeSlot.query.filter_by(is_active=True).order_by(AvailableTimeSlot.time_slot).all()
-    return jsonify([{'time': slot.time_slot} for slot in slots])
+    """Get available time slots for a given date, marking fully booked slots as unavailable."""
+    date_str = request.args.get('date')
+    pickup_date = datetime.utcnow().date()
+    if date_str:
+        try:
+            pickup_date = datetime.fromisoformat(date_str).date()
+        except Exception:
+            # Fallback to today instead of erroring to avoid breaking slot UI
+            pickup_date = datetime.utcnow().date()
+
+    settings = BookingSettings.query.first()
+    capacity = settings.max_bookings_per_slot if settings and settings.max_bookings_per_slot else 1
+
+    active_slots = AvailableTimeSlot.query.filter_by(is_active=True).order_by(AvailableTimeSlot.time_slot).all()
+    results = []
+    for slot in active_slots:
+        # Count bookings and orders using this slot
+        booking_count = Booking.query.filter_by(date=pickup_date, time_slot=slot.time_slot).filter(Booking.status != 'cancelled').count()
+        order_count = Order.query.filter_by(pickup_date=pickup_date, pickup_time=slot.time_slot).filter(Order.status != 'cancelled').count()
+        total = booking_count + order_count
+        available = total < capacity
+        remaining = max(capacity - total, 0)
+        results.append({
+            'time': slot.time_slot,
+            'available': available,
+            'remaining': remaining,
+        })
+
+    return jsonify(results)
 
 
 @csrf.exempt
@@ -630,13 +682,6 @@ def api_pickup_clear():
     session.pop('pickup_confirmed', None)
     session.pop('pickup_date', None)
     session.pop('pickup_time', None)
-        product = Product.query.get_or_404(product_id)
-        if product.product_status == 'hidden' or not product.is_active:
-            flash('This product is not available.', 'error')
-            return redirect(request.referrer or url_for('index'))
-        if product.product_status == 'upcoming':
-            flash('This product is coming soon.', 'error')
-            return redirect(request.referrer or url_for('index'))
     session.pop('booking_phone', None)
     session.modified = True
     return jsonify({'message': 'Pickup slot cleared'}), 200
@@ -655,6 +700,7 @@ def product_detail(slug):
     prefill_pickup_date = session.get('pickup_date')
     prefill_pickup_time = session.get('pickup_time')
     pickup_confirmed = session.get('pickup_confirmed', False)
+    available_stock = product.stock_quantity if product.track_inventory else None
     return render_template(
         'product_detail.html',
         product=product,
@@ -662,7 +708,8 @@ def product_detail(slug):
         currency_symbol=currency_symbol,
         prefill_pickup_date=prefill_pickup_date,
         prefill_pickup_time=prefill_pickup_time,
-        pickup_confirmed=pickup_confirmed
+        pickup_confirmed=pickup_confirmed,
+        available_stock=available_stock
     )
 
 @app.route('/cart')
@@ -803,6 +850,7 @@ def checkout():
         return redirect(url_for('index'))
 
     # Allow choosing/booking a slot directly on checkout if none was picked earlier
+    fulfillment_method = 'pickup'
     if request.method == 'POST':
         fulfillment_method = request.form.get('fulfillment_method', 'pickup')
     
@@ -841,6 +889,9 @@ def checkout():
             pickup_time = request.form.get('pickup_time') or session.get('pickup_time')
             notes = request.form.get('notes')
             payment_method = request.form.get('payment_method')
+            delivery_address = request.form.get('delivery_address')
+            delivery_postcode = request.form.get('delivery_postcode')
+            discount_code_input = (request.form.get('discount_code') or '').strip()
             is_test_checkout = request.form.get('test_checkout') == '1'
             account_choice = request.form.get('account_choice', 'guest')
             account_password = request.form.get('account_password') or ''
@@ -912,9 +963,77 @@ def checkout():
             
             subtotal = sum(item.quantity * item.price_at_add for item in cart.items)
             tax = 0
-            total = subtotal + tax
+
+            if fulfillment_method == 'delivery' and not (settings and settings.delivery_enabled):
+                flash('Delivery is currently unavailable. Please select pickup.', 'error')
+                return redirect(url_for('checkout'))
+            if fulfillment_method == 'delivery' and (not delivery_address or not delivery_postcode):
+                flash('Delivery address and postcode are required for delivery.', 'error')
+                return redirect(url_for('checkout'))
+
+            delivery_fee = 0.0
+            if fulfillment_method == 'delivery':
+                delivery_fee = settings.default_delivery_fee if settings and settings.default_delivery_fee is not None else 0.0
+                free_threshold = settings.free_delivery_threshold if settings else None
+                if free_threshold is not None and free_threshold > 0 and subtotal >= free_threshold:
+                    delivery_fee = 0.0
+
+            # Apply discount code
+            discount_obj = None
+            discount_amount = 0.0
+            applied_discount_code = None
+            if discount_code_input:
+                discount_obj = Discount.query.filter(func.lower(Discount.code) == discount_code_input.lower(), Discount.is_active == True).first()
+                if not discount_obj:
+                    flash('This discount code is invalid or inactive.', 'error')
+                    return redirect(url_for('checkout'))
+
+                now = datetime.utcnow()
+                if discount_obj.start_date and now < discount_obj.start_date:
+                    flash('This discount is not active yet.', 'error')
+                    return redirect(url_for('checkout'))
+                if discount_obj.end_date and now > discount_obj.end_date:
+                    flash('This discount has expired.', 'error')
+                    return redirect(url_for('checkout'))
+                if discount_obj.usage_limit and discount_obj.usage_count >= discount_obj.usage_limit:
+                    flash('This discount code has reached its usage limit.', 'error')
+                    return redirect(url_for('checkout'))
+
+                eligible_subtotal = subtotal
+                if discount_obj.applies_to == 'product' and discount_obj.product_id:
+                    eligible_subtotal = sum(
+                        item.quantity * item.price_at_add
+                        for item in cart.items
+                        if item.product_id == discount_obj.product_id
+                    )
+                if eligible_subtotal <= 0:
+                    flash('This code does not apply to your cart items.', 'error')
+                    return redirect(url_for('checkout'))
+
+                if discount_obj.min_order_amount and eligible_subtotal < discount_obj.min_order_amount:
+                    flash(f'Minimum order for this code is {currency_symbol}{discount_obj.min_order_amount:.2f}.', 'error')
+                    return redirect(url_for('checkout'))
+
+                if discount_obj.discount_type == 'percentage':
+                    discount_amount = eligible_subtotal * (discount_obj.discount_value / 100.0)
+                    if discount_obj.max_discount_amount:
+                        discount_amount = min(discount_amount, discount_obj.max_discount_amount)
+                else:
+                    discount_amount = min(discount_obj.discount_value, eligible_subtotal)
+
+                if discount_obj.free_delivery:
+                    delivery_fee = 0.0
+
+                applied_discount_code = discount_obj.code
+
+            if discount_amount > subtotal:
+                discount_amount = subtotal
+
+            total = subtotal - discount_amount + tax + delivery_fee
             display_subtotal = convert_amount(subtotal, fx_rate)
+            display_discount = convert_amount(discount_amount, fx_rate)
             display_tax = convert_amount(tax, fx_rate)
+            display_delivery_fee = convert_amount(delivery_fee, fx_rate)
             display_total = convert_amount(total, fx_rate)
             
             order_number = build_order_number(settings)
@@ -926,6 +1045,12 @@ def checkout():
                 customer_phone=customer_phone,
                 pickup_date=pickup_date,
                 pickup_time=pickup_time,
+                fulfillment_method=fulfillment_method,
+                delivery_address=delivery_address if fulfillment_method == 'delivery' else None,
+                delivery_postcode=delivery_postcode if fulfillment_method == 'delivery' else None,
+                delivery_fee=delivery_fee,
+                discount_code=applied_discount_code,
+                discount_amount=discount_amount,
                 subtotal=subtotal,
                 tax=tax,
                 total=total,
@@ -939,6 +1064,9 @@ def checkout():
             )
             db.session.add(order)
             db.session.flush()
+
+            if discount_obj:
+                discount_obj.usage_count = (discount_obj.usage_count or 0) + 1
             
             for cart_item in cart.items:
                 order_item = OrderItem(
@@ -1077,9 +1205,17 @@ def checkout():
     
     subtotal = sum(item.quantity * item.price_at_add for item in cart.items)
     tax = 0
-    total = subtotal + tax
+    discount_amount = 0.0
+    delivery_fee_base = settings.default_delivery_fee if settings and settings.default_delivery_fee is not None else 0.0
+    free_delivery_threshold = settings.free_delivery_threshold if settings else None
+    delivery_fee = 0.0
+    total = subtotal - discount_amount + tax + delivery_fee
     display_subtotal = convert_amount(subtotal, fx_rate)
+    display_discount = convert_amount(discount_amount, fx_rate)
     display_tax = convert_amount(tax, fx_rate)
+    display_delivery_fee = convert_amount(delivery_fee, fx_rate)
+    display_delivery_fee_base = convert_amount(delivery_fee_base, fx_rate)
+    display_free_delivery_threshold = convert_amount(free_delivery_threshold, fx_rate) if (free_delivery_threshold is not None and free_delivery_threshold > 0) else 0.0
     display_total = convert_amount(total, fx_rate)
     currency_symbol = CURRENCY_SYMBOLS.get(order_currency, order_currency + ' ')
     prefill_pickup_date = session.get('pickup_date')
@@ -1098,7 +1234,11 @@ def checkout():
                          tax=tax, 
                          total=total,
                          display_subtotal=display_subtotal,
+                         display_discount=display_discount,
                          display_tax=display_tax,
+                         display_delivery_fee=display_delivery_fee,
+                         display_delivery_fee_base=display_delivery_fee_base,
+                         display_free_delivery_threshold=display_free_delivery_threshold,
                          display_total=display_total,
                          currency_symbol=currency_symbol,
                          order_currency=order_currency,
@@ -1110,6 +1250,7 @@ def checkout():
                          prefill_name=prefill_name,
                          prefill_email=prefill_email,
                          prefill_phone=prefill_phone,
+                         applied_discount_code=None,
                          stripe_available='stripe' in available_payment_methods,
                          paypal_available='paypal' in available_payment_methods,
                          available_payment_methods=available_payment_methods,
@@ -1417,7 +1558,6 @@ def admin_product_new():
             name=request.form['name'],
             short_description=request.form.get('short_description'),
             full_description=request.form.get('full_description'),
-            description=request.form.get('short_description', ''),  # Backward compatibility
             price=float(request.form['price']) if request.form.get('price') else None,
             image_url=image_url,
             is_active=request.form.get('is_active') == 'on',
@@ -1447,7 +1587,6 @@ def admin_product_edit(id):
         product.name = request.form['name']
         product.short_description = request.form.get('short_description')
         product.full_description = request.form.get('full_description')
-        product.description = request.form.get('short_description', '')  # Backward compatibility
         product.price = float(request.form['price']) if request.form.get('price') else None
         product.is_active = request.form.get('is_active') == 'on'
         product.order = int(request.form.get('order', 0))

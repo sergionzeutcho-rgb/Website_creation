@@ -79,9 +79,40 @@
       </section>
       {% endif %}
 
-      <form action="{{ url_for('checkout') }}" method="POST" class="checkout-layout">
-        <input type="hidden" name="fulfillment_method" value="pickup">
+      <form action="{{ url_for('checkout') }}" method="POST" class="checkout-layout" id="checkoutForm">
         <div>
+          <section class="card-surface form-card">
+            <h2>Fulfillment</h2>
+            <p class="summary-note" style="margin-top: 4px;">Choose pickup or delivery for this order.</p>
+            <div class="pill-options" style="display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px;">
+              <label class="pill-radio">
+                <input type="radio" name="fulfillment_method" value="pickup" checked>
+                <span>Pickup</span>
+              </label>
+              {% if settings and settings.delivery_enabled %}
+              <label class="pill-radio">
+                <input type="radio" name="fulfillment_method" value="delivery">
+                <span>Delivery</span>
+              </label>
+              {% else %}
+              <small class="summary-note">Delivery is currently disabled.</small>
+              {% endif %}
+            </div>
+            <div id="deliveryFields" style="display: none; margin-top: 14px;">
+              <div class="field">
+                <label for="delivery_address">Delivery address</label>
+                <textarea id="delivery_address" name="delivery_address" rows="2"></textarea>
+              </div>
+              <div class="field">
+                <label for="delivery_postcode">Postcode</label>
+                <input type="text" id="delivery_postcode" name="delivery_postcode" placeholder="e.g., SW1X 7RL">
+              </div>
+              {% if settings and settings.default_delivery_fee %}
+              <p class="summary-note">Delivery fee: {{ currency_symbol }}{{ '%.2f'|format(settings.default_delivery_fee) }}{% if settings.free_delivery_threshold %} (free over {{ currency_symbol }}{{ '%.2f'|format(settings.free_delivery_threshold) }}){% endif %}</p>
+              {% endif %}
+            </div>
+          </section>
+
           <section class="card-surface form-card" id="contact-info">
             <h2>Contact information</h2>
             <p class="summary-note" style="margin-top: 4px;">Choose to continue as guest or create an account without leaving this page.</p>
@@ -130,8 +161,8 @@
             {% endif %}
           </section>
 
-          <section class="card-surface form-card">
-            <h2>Pickup details</h2>
+          <section class="card-surface form-card" id="pickupFields">
+            <h2>Fulfillment details</h2>
             <div class="field">
               <label for="pickup_date">Pickup date</label>
               <input type="date" id="pickup_date" name="pickup_date" value="{{ prefill_pickup_date or '' }}" required>
@@ -237,9 +268,28 @@
             {% endfor %}
           </div>
 
+          <div class="field" style="margin-top: 10px;">
+            <label for="discount_code">Discount code</label>
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <input type="text" id="discount_code" name="discount_code" value="{{ applied_discount_code or '' }}" placeholder="Enter code" style="flex: 1;">
+              <button type="submit" class="btn-sec" style="white-space: nowrap;">Apply</button>
+            </div>
+            {% if display_discount and display_discount > 0 %}
+            <p class="summary-note" style="margin-top: 6px;">Code applied.</p>
+            {% endif %}
+          </div>
+
           <div class="summary-row">
             <span>Subtotal</span>
             <span>{{ currency_symbol }}{{ "%.2f"|format(display_subtotal) }}</span>
+          </div>
+          <div class="summary-row" id="discountRow" style="display: {{ display_discount > 0 and 'flex' or 'none' }};">
+            <span>Discount</span>
+            <span id="discountAmount">-{{ currency_symbol }}{{ "%.2f"|format(display_discount or 0) }}</span>
+          </div>
+          <div class="summary-row" id="deliveryRow" style="display: {{ display_delivery_fee > 0 and 'flex' or 'none' }};">
+            <span>Delivery</span>
+            <span id="deliveryAmount">{{ currency_symbol }}{{ "%.2f"|format(display_delivery_fee) }}</span>
           </div>
           <div class="summary-row">
             <span>Tax</span>
@@ -247,7 +297,7 @@
           </div>
           <div class="summary-total">
             <span>Total</span>
-            <span>{{ currency_symbol }}{{ "%.2f"|format(display_total) }}</span>
+            <span id="totalAmount">{{ currency_symbol }}{{ "%.2f"|format(display_total) }}</span>
           </div>
 
           <p class="summary-note">Currency: {{ order_currency }}</p>
@@ -297,7 +347,81 @@
       // Set minimum date to today
       const dateInput = document.getElementById('pickup_date');
       const today = new Date().toISOString().split('T')[0];
-      dateInput.setAttribute('min', today);
+      if (dateInput) {
+        dateInput.setAttribute('min', today);
+      }
+
+      const fulfillmentRadios = document.querySelectorAll('input[name="fulfillment_method"]');
+      const deliveryFields = document.getElementById('deliveryFields');
+      const pickupFields = document.getElementById('pickupFields');
+      const deliveryRow = document.getElementById('deliveryRow');
+      const deliveryAmount = document.getElementById('deliveryAmount');
+      const discountRow = document.getElementById('discountRow');
+      const discountAmount = document.getElementById('discountAmount');
+      const totalAmount = document.getElementById('totalAmount');
+      const currencySymbol = '{{ currency_symbol }}';
+
+      const subtotalValue = parseFloat('{{ "%.2f"|format(display_subtotal) }}') || 0;
+      const taxValue = parseFloat('{{ "%.2f"|format(display_tax) }}') || 0;
+      const discountValue = parseFloat('{{ "%.2f"|format(display_discount) }}') || 0;
+      const deliveryFeeBase = parseFloat('{{ "%.2f"|format(display_delivery_fee_base) }}') || 0;
+      const freeDeliveryThreshold = parseFloat('{{ "%.2f"|format(display_free_delivery_threshold) }}') || 0;
+
+      const isDelivery = () => {
+        const selected = document.querySelector('input[name="fulfillment_method"]:checked');
+        return selected && selected.value === 'delivery';
+      };
+
+      const computeDeliveryFee = () => {
+        if (!isDelivery()) return 0;
+        if (freeDeliveryThreshold > 0 && subtotalValue >= freeDeliveryThreshold) return 0;
+        return deliveryFeeBase;
+      };
+
+      const updateTotals = () => {
+        const fee = computeDeliveryFee();
+        const total = Math.max(subtotalValue - discountValue + taxValue + fee, 0);
+
+        if (deliveryRow) {
+          deliveryRow.style.display = isDelivery() ? 'flex' : 'none';
+        }
+        if (deliveryAmount) {
+          deliveryAmount.textContent = `${currencySymbol}${fee.toFixed(2)}`;
+        }
+        if (discountRow) {
+          discountRow.style.display = discountValue > 0 ? 'flex' : 'none';
+        }
+        if (discountAmount) {
+          discountAmount.textContent = `-${currencySymbol}${discountValue.toFixed(2)}`;
+        }
+        if (totalAmount) {
+          totalAmount.textContent = `${currencySymbol}${total.toFixed(2)}`;
+        }
+      };
+
+      const toggleFulfillment = () => {
+        const deliverySelected = isDelivery();
+        if (deliveryFields) {
+          deliveryFields.style.display = deliverySelected ? '' : 'none';
+        }
+        if (pickupFields) {
+          pickupFields.style.display = '';
+        }
+        const deliveryAddress = document.getElementById('delivery_address');
+        const deliveryPostcode = document.getElementById('delivery_postcode');
+        if (deliveryAddress) {
+          deliveryAddress.required = deliverySelected;
+        }
+        if (deliveryPostcode) {
+          deliveryPostcode.required = deliverySelected;
+        }
+        updateTotals();
+      };
+
+      fulfillmentRadios.forEach((radio) => {
+        radio.addEventListener('change', toggleFulfillment);
+      });
+      toggleFulfillment();
 
       const confirmPickupButton = document.getElementById('confirmPickupEmail');
       const pickupConfirmNote = document.getElementById('pickupConfirmNote');

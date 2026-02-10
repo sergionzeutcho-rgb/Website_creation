@@ -75,7 +75,7 @@
 
   <!-- Add Variant Form -->
   <div>
-    <form action="{{ url_for('admin_product_variants', id=product.id) }}" method="POST" style="background: white; border-radius: 8px; padding: 32px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); position: sticky; top: 100px">
+    <form action="{{ url_for('admin_product_variants', product_id=product.id) }}" method="POST" style="background: white; border-radius: 8px; padding: 32px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); position: sticky; top: 100px">
       <h2 style="font-size: 20px; font-weight: 600; margin-bottom: 24px">Add New Variant</h2>
       
       <div style="margin-bottom: 20px">

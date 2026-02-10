@@ -31,7 +31,11 @@
     <main style="padding: 80px clamp(20px, 6vw, 90px); min-height: 60vh">
       <div style="max-width: 800px; margin: 0 auto; text-align: center">
         {% set confirmation_title = settings.confirmation_title if settings and settings.confirmation_title else 'Merci, your order is confirmed.' %}
+        {% if order.fulfillment_method == 'delivery' %}
+        {% set confirmation_subtitle = 'We are preparing your delivery. A confirmation has been sent to your inbox.' %}
+        {% else %}
         {% set confirmation_subtitle = settings.confirmation_subtitle if settings and settings.confirmation_subtitle else 'We will have everything ready for your chosen collection time. A note has been sent to your inbox.' %}
+        {% endif %}
         <div style="width: 80px; height: 80px; background: linear-gradient(135deg, var(--gold-light), var(--gold)); border-radius: 50%; margin: 0 auto 24px; display: flex; align-items: center; justify-content: center">
           <svg width="40" height="40" fill="white" viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
         </div>
@@ -54,9 +58,13 @@
             </div>
 
             <div>
-              <div style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.1em; color: #777; margin-bottom: 8px">Pickup</div>
-              <div style="font-weight: 600">{{ order.pickup_date.strftime('%B %d, %Y') }}</div>
-              <div style="color: #555">{{ order.pickup_time }}</div>
+              <div style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.1em; color: #777; margin-bottom: 8px">Fulfillment</div>
+              <div style="font-weight: 600">{{ order.fulfillment_method|title }}</div>
+              <div style="color: #555">{{ order.pickup_date.strftime('%B %d, %Y') }} · {{ order.pickup_time }}</div>
+              {% if order.fulfillment_method == 'delivery' %}
+              <div style="color: #555; margin-top: 8px">{{ order.delivery_address }}</div>
+              {% if order.delivery_postcode %}<div style="color: #777">{{ order.delivery_postcode }}</div>{% endif %}
+              {% endif %}
             </div>
           </div>
 
@@ -79,6 +87,12 @@
               <span>Subtotal:</span>
               <span>{{ currency_symbol }}{{ "%.2f"|format(order.subtotal) }}</span>
             </div>
+            {% if order.fulfillment_method == 'delivery' %}
+            <div style="display: flex; justify-content: space-between; margin-bottom: 8px">
+              <span>Delivery:</span>
+              <span>{{ currency_symbol }}{{ "%.2f"|format(order.delivery_fee or 0) }}</span>
+            </div>
+            {% endif %}
             <div style="display: flex; justify-content: space-between; margin-bottom: 16px">
               <span>Tax:</span>
               <span>{{ currency_symbol }}{{ "%.2f"|format(order.tax) }}</span>
