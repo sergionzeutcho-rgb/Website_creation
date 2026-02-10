@@ -103,9 +103,11 @@ class Order(db.Model):
     discount_amount = db.Column(db.Float, default=0.0)  # Discount amount
     tax = db.Column(db.Float, default=0.0)
     total = db.Column(db.Float, nullable=False)
+    currency = db.Column(db.String(10), default='GBP')
+    fx_rate = db.Column(db.Float, default=1.0)
     
     # Payment
-    payment_method = db.Column(db.String(50))  # stripe, paypal, cash_on_pickup
+    payment_method = db.Column(db.String(50))  # stripe, paypal
     payment_status = db.Column(db.String(50), default='pending')  # pending, paid, failed, refunded
     payment_intent_id = db.Column(db.String(200))  # Stripe payment intent ID
     

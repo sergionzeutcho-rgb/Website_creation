@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Order Confirmation {{ order.order_number }}</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      background: #0b0b0f;
+      font-family: 'Segoe UI', Arial, sans-serif;
+      color: #111;
+    }
+    .wrapper {
+      max-width: 640px;
+      margin: 0 auto;
+      background: #f7f5f2;
+      padding: 0 24px 32px;
+    }
+    .header {
+      background: #0b0b0f;
+      color: #f7f5f2;
+      padding: 32px 24px;
+      border-bottom: 4px solid #c0a065;
+      text-align: center;
+    }
+    .header h1 {
+      margin: 0;
+      font-size: 24px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+    .header p {
+      margin: 8px 0 0;
+      color: #e2d8c3;
+      font-size: 14px;
+      letter-spacing: 0.04em;
+    }
+    .card {
+      background: #fff;
+      border-radius: 12px;
+      padding: 24px;
+      margin-top: 24px;
+      box-shadow: 0 14px 40px rgba(0, 0, 0, 0.08);
+      border: 1px solid #e6ded1;
+    }
+    .eyebrow {
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      font-size: 12px;
+      color: #6f6048;
+      margin-bottom: 8px;
+    }
+    .title {
+      font-size: 20px;
+      margin: 0 0 12px;
+      color: #1b1b1f;
+    }
+    .muted {
+      color: #666;
+      font-size: 14px;
+      margin: 4px 0;
+    }
+    .divider {
+      border: none;
+      border-top: 1px solid #eee4d7;
+      margin: 24px 0;
+    }
+    .pill {
+      display: inline-block;
+      padding: 6px 12px;
+      border-radius: 999px;
+      font-size: 12px;
+      background: #f3eadc;
+      color: #6f6048;
+      border: 1px solid #e6ded1;
+      margin-right: 8px;
+    }
+    .table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 12px;
+    }
+    .table th {
+      text-align: left;
+      font-size: 13px;
+      color: #6f6048;
+      padding: 10px 0;
+      border-bottom: 1px solid #eee4d7;
+    }
+    .table td {
+      padding: 12px 0;
+      border-bottom: 1px solid #f0e8dc;
+      font-size: 14px;
+      color: #1b1b1f;
+    }
+    .table td:last-child,
+    .table th:last-child {
+      text-align: right;
+    }
+    .total-row {
+      font-weight: 700;
+      font-size: 16px;
+      color: #c0a065;
+    }
+    .footer {
+      text-align: center;
+      color: #d5c7b2;
+      font-size: 13px;
+      padding: 24px 0 16px;
+    }
+    .footer a {
+      color: #e4d3ae;
+      text-decoration: none;
+    }
+    .cta {
+      display: inline-block;
+      padding: 12px 20px;
+      margin-top: 16px;
+      background: linear-gradient(120deg, #c0a065, #d6bf88);
+      color: #0b0b0f;
+      border-radius: 999px;
+      font-weight: 700;
+      text-decoration: none;
+      letter-spacing: 0.04em;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrapper">
+    <div class="header">
+      <h1>Atelier Gourmand by OC</h1>
+      <p>Handcrafted patisserie - London</p>
+    </div>
+
+    <div class="card">
+      <div class="eyebrow">Order Confirmation</div>
+      <h2 class="title">Thank you, {{ order.customer_name }}.</h2>
+      <div class="muted">Order {{ order.order_number }}</div>
+      <div class="muted">Pickup on {{ order.pickup_date }} at {{ order.pickup_time }}</div>
+      <div class="muted">Payment: {{ order.payment_method|replace('_', ' ')|title }} - {{ order.payment_status|title if order.payment_status else 'Pending' }} (card payment in advance)</div>
+      {% if order.notes %}
+      <div class="muted">Notes: {{ order.notes }}</div>
+      {% endif %}
+    </div>
+
+    <div class="card">
+      <div class="eyebrow">Your Items</div>
+      <table class="table" role="presentation">
+        <thead>
+          <tr>
+            <th>Product</th>
+            <th>Qty</th>
+            <th>Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in order.items %}
+          <tr>
+            <td>
+              <div>{{ item.product_name }}</div>
+              {% if item.variant_name %}<div class="muted">{{ item.variant_name }}</div>{% endif %}
+            </td>
+            <td>{{ item.quantity }}</td>
+            <td>{{ currency_symbol }}{{ "%.2f"|format(item.total_price) }}</td>
+          </tr>
+          {% endfor %}
+          <tr class="total-row">
+            <td colspan="2">Total</td>
+            <td>{{ currency_symbol }}{{ "%.2f"|format(order.total) }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <div class="eyebrow">Pickup Details</div>
+      <p class="muted">We will have your order ready at {{ order.pickup_time }} on {{ order.pickup_date }}.</p>
+      <p class="muted">Address: {% if settings and settings.address %}{{ settings.address }}{% else %}Wilton Place, SW1X 7RL - London{% endif %}</p>
+      <p class="muted">Need help? {% if settings and settings.contact_email %}<a href="mailto:{{ settings.contact_email }}">{{ settings.contact_email }}</a>{% else %}<a href="mailto:hello@ateliergourmandbyoc.co.uk">hello@ateliergourmandbyoc.co.uk</a>{% endif %}</p>
+      <a class="cta" href="{{ url_for('order_confirmation', order_number=order.order_number, _external=True) }}">View order details</a>
+    </div>
+
+    <div class="footer">
+      <div>We look forward to welcoming you.</div>
+      <div style="margin-top: 6px;">(c) 2026 Atelier Gourmand by OC</div>
+    </div>
+  </div>
+</body>
+</html>

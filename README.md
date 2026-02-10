@@ -90,6 +90,44 @@ gunicorn -w 4 -b 0.0.0.0:8000 app:app
 
 4. **Enable HTTPS** with Let's Encrypt
 
+## Payments (Stripe + PayPal)
+
+### Environment variables
+Set these in your hosting environment (recommended) or `.env` for local testing:
+
+- `STRIPE_PUBLIC_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`
+- `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `PAYPAL_WEBHOOK_ID`, `PAYPAL_MODE`
+- `PAYMENT_BASE_URL` (e.g., `https://your-domain.com`)
+- `PAYMENT_SUCCESS_PATH` (default `/payment/success`)
+- `PAYMENT_CANCEL_PATH` (default `/payment/cancel`)
+- `DEFAULT_CURRENCY`, `BASE_CURRENCY`
+- `AUTO_CURRENCY_BY_IP` (true/false)
+- `CURRENCY_RATES` (example: `EUR:1.15,USD:1.27,CAD:1.72`)
+- `GEOIP_COUNTRY_HEADER` (set to your proxy's country header name)
+
+### Stripe setup
+1. Create a Stripe account and get API keys (test mode first).
+2. Add a webhook endpoint pointing to `/webhooks/stripe`.
+3. Copy the webhook signing secret to `STRIPE_WEBHOOK_SECRET`.
+
+### PayPal setup
+1. Create a PayPal app and get client ID + secret (sandbox first).
+2. Add a webhook endpoint pointing to `/webhooks/paypal`.
+3. Copy the PayPal webhook ID to `PAYPAL_WEBHOOK_ID`.
+
+### Local testing
+Set `PAYMENT_BASE_URL=http://localhost:5000` and run the app.
+
+## Security Checklist (Production)
+
+- Set `SECRET_KEY` to a long random value.
+- Set `FLASK_ENV=production`.
+- Enable HTTPS and set `FORCE_HTTPS=true` behind your reverse proxy.
+- Configure secure cookies with `SESSION_COOKIE_SECURE=true`.
+- Use Stripe/PayPal hosted checkout or approved SDK flows; never collect card data directly.
+- Create a Stripe/PayPal webhook endpoint and verify signatures before updating order status.
+- Rotate admin credentials and remove default passwords.
+
 ## File Structure
 
 ```
@@ -135,3 +173,7 @@ For issues or questions, edit the code or contact the development team.
 ---
 
 **Atelier Gourmand by OC** - Quiet luxury, careful detail.
+
+## Copyright
+
+© 2026 Atelier Gourmand by OC. All rights reserved.

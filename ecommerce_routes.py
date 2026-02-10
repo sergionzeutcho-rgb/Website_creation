@@ -169,7 +169,9 @@ def checkout():
             pickup_date = datetime.strptime(request.form.get('pickup_date'), '%Y-%m-%d').date()
             pickup_time = request.form.get('pickup_time')
             notes = request.form.get('notes')
-            payment_method = request.form.get('payment_method', 'cash_on_pickup')
+            payment_method = request.form.get('payment_method', 'stripe')
+            if payment_method not in ('stripe', 'paypal'):
+                payment_method = 'stripe'
             
             # Calculate totals
             subtotal = sum(item.quantity * item.price_at_add for item in cart.items)

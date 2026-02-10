@@ -3,11 +3,13 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="csrf-token" content="{{ csrf_token() }}" />
     <title>Checkout - Atelier Gourmand by OC</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Inter:wght@300;400;500&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
+    <link rel="stylesheet" href="{{ url_for('static', filename='animations.css') }}" />
   </head>
   <body>
     <header class="site-header">
@@ -28,7 +30,7 @@
       </nav>
     </header>
 
-    <main style="padding: 80px clamp(20px, 6vw, 90px)">
+    <main class="page-shell">
       {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
           {% for category, message in messages %}
@@ -38,167 +40,240 @@
           {% endfor %}
         {% endif %}
       {% endwith %}
-
-      <div style="max-width: 1200px; margin: 0 auto">
-        <h1 style="font-family: 'Playfair Display', serif; font-size: clamp(36px, 5vw, 48px); margin-bottom: 40px; text-align: center">Checkout</h1>
-
-        <form action="{{ url_for('checkout') }}" method="POST" style="display: grid; grid-template-columns: 1fr 400px; gap: 40px">
-          <!-- Customer & Pickup Details -->
-          <div>
-            <div class="booking-card" style="margin-bottom: 32px">
-              <h2 style="font-family: 'Playfair Display', serif; font-size: 24px; margin-bottom: 24px">Contact Information</h2>
-              
-              <div style="margin-bottom: 20px">
-                <label for="name" style="display: block; margin-bottom: 8px; font-weight: 500">Full Name *</label>
-                <input type="text" id="name" name="name" required style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 16px">
-              </div>
-
-              <div style="margin-bottom: 20px">
-                <label for="email" style="display: block; margin-bottom: 8px; font-weight: 500">Email *</label>
-                <input type="email" id="email" name="email" required style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 16px">
-              </div>
-
-              <div style="margin-bottom: 20px">
-                <label for="phone" style="display: block; margin-bottom: 8px; font-weight: 500">Phone</label>
-                <input type="tel" id="phone" name="phone" style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 16px">
-              </div>
-            </div>
-
-            <div class="booking-card" style="margin-bottom: 32px">
-              <h2 style="font-family: 'Playfair Display', serif; font-size: 24px; margin-bottom: 24px">Pickup Details</h2>
-              
-              <div style="margin-bottom: 20px">
-                <label for="pickup_date" style="display: block; margin-bottom: 8px; font-weight: 500">Pickup Date *</label>
-                <input type="date" id="pickup_date" name="pickup_date" required style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 16px">
-              </div>
-
-              <div style="margin-bottom: 20px">
-                <label for="pickup_time" style="display: block; margin-bottom: 8px; font-weight: 500">Pickup Time *</label>
-                <select id="pickup_time" name="pickup_time" required style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 16px">
-                  <option value="">--Choisir un créneau horaire--</option>
-                  {% set morning_slots = [] %}
-                  {% set afternoon_slots = [] %}
-                  {% set evening_slots = [] %}
-                  {% for slot in time_slots %}
-                    {% set hour = slot.time_slot.split(':')[0]|int %}
-                    {% if hour >= 6 and hour < 12 %}
-                      {% set _ = morning_slots.append(slot) %}
-                    {% elif hour >= 12 and hour < 18 %}
-                      {% set _ = afternoon_slots.append(slot) %}
-                    {% else %}
-                      {% set _ = evening_slots.append(slot) %}
-                    {% endif %}
-                  {% endfor %}
-                  {% if morning_slots %}
-                  <optgroup label="Matin (6h-12h)">
-                    {% for slot in morning_slots %}
-                    <option value="{{ slot.time_slot }}">{{ slot.time_slot }}</option>
-                    {% endfor %}
-                  </optgroup>
-                  {% endif %}
-                  {% if afternoon_slots %}
-                  <optgroup label="Après-midi (12h-18h)">
-                    {% for slot in afternoon_slots %}
-                    <option value="{{ slot.time_slot }}">{{ slot.time_slot }}</option>
-                    {% endfor %}
-                  </optgroup>
-                  {% endif %}
-                  {% if evening_slots %}
-                  <optgroup label="Soir (18h-23h)">
-                    {% for slot in evening_slots %}
-                    <option value="{{ slot.time_slot }}">{{ slot.time_slot }}</option>
-                    {% endfor %}
-                  </optgroup>
-                  {% endif %}
-                </select>
-              </div>
-
-              <div style="margin-bottom: 20px">
-                <label for="notes" style="display: block; margin-bottom: 8px; font-weight: 500">Special Instructions</label>
-                <textarea id="notes" name="notes" rows="4" style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 16px"></textarea>
-              </div>
-            </div>
-
-            <div class="booking-card">
-              <h2 style="font-family: 'Playfair Display', serif; font-size: 24px; margin-bottom: 24px">Payment Method</h2>
-              
-              <div style="margin-bottom: 16px">
-                <label style="display: flex; align-items: center; padding: 16px; border: 2px solid #ddd; border-radius: 8px; cursor: pointer">
-                  <input type="radio" name="payment_method" value="cash_on_pickup" checked style="margin-right: 12px">
-                  <div>
-                    <div style="font-weight: 600">Pay on Pickup</div>
-                    <div style="font-size: 14px; color: #777">Cash or card at collection</div>
-                  </div>
-                </label>
-              </div>
-
-              {% if settings and settings.stripe_public_key %}
-              <div style="margin-bottom: 16px">
-                <label style="display: flex; align-items: center; padding: 16px; border: 2px solid #ddd; border-radius: 8px; cursor: pointer">
-                  <input type="radio" name="payment_method" value="stripe" style="margin-right: 12px">
-                  <div>
-                    <div style="font-weight: 600">Pay Now (Card)</div>
-                    <div style="font-size: 14px; color: #777">Secure payment via Stripe</div>
-                  </div>
-                </label>
-              </div>
-              {% endif %}
-            </div>
-          </div>
-
-          <!-- Order Summary -->
-          <div>
-            <div style="background: var(--cream); border-radius: var(--radius); padding: 32px; position: sticky; top: 100px">
-              <h2 style="font-family: 'Playfair Display', serif; font-size: 24px; margin-bottom: 24px">Order Summary</h2>
-              
-              <div style="margin-bottom: 24px; max-height: 300px; overflow-y: auto">
-                {% for item in cart.items %}
-                <div style="display: flex; justify-content: space-between; margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid #ddd">
-                  <div>
-                    <div style="font-weight: 600">{{ item.product.name }}</div>
-                    {% if item.variant %}
-                    <div style="font-size: 13px; color: #777">{{ item.variant.name }}</div>
-                    {% endif %}
-                    <div style="font-size: 13px; color: #777">Qty: {{ item.quantity }}</div>
-                  </div>
-                  <div style="font-weight: 600">£{{ "%.2f"|format(item.quantity * item.price_at_add) }}</div>
-                </div>
-                {% endfor %}
-              </div>
-
-              <div style="padding-top: 20px; border-top: 2px solid var(--gold)">
-                <div style="display: flex; justify-content: space-between; margin-bottom: 12px">
-                  <span>Subtotal:</span>
-                  <span>£{{ "%.2f"|format(subtotal) }}</span>
-                </div>
-                <div style="display: flex; justify-content: space-between; margin-bottom: 20px">
-                  <span>Tax:</span>
-                  <span>£{{ "%.2f"|format(tax) }}</span>
-                </div>
-                <div style="display: flex; justify-content: space-between; font-size: 24px; font-weight: 700; color: var(--gold)">
-                  <span>Total:</span>
-                  <span>£{{ "%.2f"|format(total) }}</span>
-                </div>
-              </div>
-
-              <button type="submit" class="btn-primary" style="width: 100%; padding: 16px; margin-top: 24px; font-size: 16px; cursor: pointer">
-                Place Order
-              </button>
-
-              <a href="{{ url_for('view_cart') }}" style="display: block; text-align: center; margin-top: 12px; color: var(--gold); text-decoration: none">
-                ← Back to cart
-              </a>
-            </div>
-          </div>
-        </form>
+      <div class="page-head">
+        <div>
+          <p class="eyebrow">Checkout</p>
+          <h1 class="page-title">Finalize your order</h1>
+          <p class="page-subtitle">Add your details, choose a pickup slot, and confirm payment.</p>
+        </div>
+        <ol class="stepper">
+          <li>Cart</li>
+          <li class="active">Details</li>
+          <li>Payment</li>
+        </ol>
       </div>
+
+      <form action="{{ url_for('checkout') }}" method="POST" class="checkout-layout">
+        <input type="hidden" name="fulfillment_method" value="pickup">
+        <div>
+          <section class="card-surface form-card">
+            <h2>Contact information</h2>
+            <div class="field">
+              <label for="name">Full name</label>
+              <input type="text" id="name" name="name" required>
+            </div>
+            <div class="field">
+              <label for="email">Email</label>
+              <input type="email" id="email" name="email" value="{{ prefill_email or '' }}" required>
+            </div>
+            <div class="field">
+              <label for="phone">Phone</label>
+              <input type="tel" id="phone" name="phone" value="{{ prefill_phone or '' }}">
+            </div>
+          </section>
+
+          <section class="card-surface form-card">
+            <h2>Pickup details</h2>
+            <div class="field">
+              <label for="pickup_date">Pickup date</label>
+              <input type="date" id="pickup_date" name="pickup_date" value="{{ prefill_pickup_date or '' }}" required>
+            </div>
+            <div class="field">
+              <label for="pickup_time">Pickup time</label>
+              <select id="pickup_time" name="pickup_time" required>
+                <option value="">Select a time slot</option>
+                {% set morning_slots = [] %}
+                {% set afternoon_slots = [] %}
+                {% set evening_slots = [] %}
+                {% for slot in time_slots %}
+                  {% set hour = slot.time_slot.split(':')[0]|int %}
+                  {% if hour >= 6 and hour < 12 %}
+                    {% set _ = morning_slots.append(slot) %}
+                  {% elif hour >= 12 and hour < 18 %}
+                    {% set _ = afternoon_slots.append(slot) %}
+                  {% else %}
+                    {% set _ = evening_slots.append(slot) %}
+                  {% endif %}
+                {% endfor %}
+                {% if morning_slots %}
+                <optgroup label="Morning (6am-12pm)">
+                  {% for slot in morning_slots %}
+                  <option value="{{ slot.time_slot }}" {% if prefill_pickup_time == slot.time_slot %}selected{% endif %}>{{ slot.time_slot }}</option>
+                  {% endfor %}
+                </optgroup>
+                {% endif %}
+                {% if afternoon_slots %}
+                <optgroup label="Afternoon (12pm-6pm)">
+                  {% for slot in afternoon_slots %}
+                  <option value="{{ slot.time_slot }}" {% if prefill_pickup_time == slot.time_slot %}selected{% endif %}>{{ slot.time_slot }}</option>
+                  {% endfor %}
+                </optgroup>
+                {% endif %}
+                {% if evening_slots %}
+                <optgroup label="Evening (6pm-11pm)">
+                  {% for slot in evening_slots %}
+                  <option value="{{ slot.time_slot }}" {% if prefill_pickup_time == slot.time_slot %}selected{% endif %}>{{ slot.time_slot }}</option>
+                  {% endfor %}
+                </optgroup>
+                {% endif %}
+              </select>
+            </div>
+            <div class="field">
+              <label for="notes">Special instructions</label>
+              <textarea id="notes" name="notes" rows="4"></textarea>
+            </div>
+            {% if prefill_pickup_date and prefill_pickup_time %}
+            <div class="field">
+              <p class="summary-note">Pickup slot confirmed for {{ prefill_pickup_date }} at {{ prefill_pickup_time }}.</p>
+              <button type="button" class="btn-sec" id="confirmPickupEmail">Confirm pickup by email</button>
+              <p class="summary-note" id="pickupConfirmNote"></p>
+            </div>
+            {% endif %}
+          </section>
+
+          <section class="card-surface form-card">
+            <h2>Payment method</h2>
+            {% set default_payment = available_payment_methods[0] if available_payment_methods else 'stripe' %}
+            <p class="summary-note">Payment is required in advance via secure card checkout.</p>
+
+            {% if stripe_available %}
+            <label class="payment-option">
+              <input type="radio" name="payment_method" value="stripe" {% if default_payment == 'stripe' %}checked{% endif %}>
+              <div>
+                <strong>Pay now (Card)</strong>
+                <p>Secure payment via Stripe</p>
+              </div>
+            </label>
+            {% endif %}
+
+            {% if paypal_available %}
+            <label class="payment-option">
+              <input type="radio" name="payment_method" value="paypal" {% if default_payment == 'paypal' %}checked{% endif %}>
+              <div>
+                <strong>Pay now (PayPal)</strong>
+                <p>Secure payment via PayPal</p>
+              </div>
+            </label>
+            {% endif %}
+          </section>
+        </div>
+
+        <aside class="card-surface summary-card">
+          <h2 class="summary-title">Order summary</h2>
+          <div class="order-list">
+            {% for item in cart.items %}
+            <div class="order-line">
+              <div>
+                <strong>{{ item.product.name }}</strong>
+                {% if item.variant %}
+                <small>{{ item.variant.name }}</small>
+                {% endif %}
+                <small>Qty: {{ item.quantity }}</small>
+              </div>
+              <div><strong>{{ currency_symbol }}{{ "%.2f"|format(item.quantity * item.price_at_add) }}</strong></div>
+            </div>
+            {% endfor %}
+          </div>
+
+          <div class="summary-row">
+            <span>Subtotal</span>
+            <span>{{ currency_symbol }}{{ "%.2f"|format(display_subtotal) }}</span>
+          </div>
+          <div class="summary-row">
+            <span>Tax</span>
+            <span>{{ currency_symbol }}{{ "%.2f"|format(display_tax) }}</span>
+          </div>
+          <div class="summary-total">
+            <span>Total</span>
+            <span>{{ currency_symbol }}{{ "%.2f"|format(display_total) }}</span>
+          </div>
+
+          <p class="summary-note">Currency: {{ order_currency }}</p>
+          <div class="summary-actions">
+            <button type="submit" class="btn-primary">Place order</button>
+            <a href="{{ url_for('view_cart') }}" class="btn-sec">Back to cart</a>
+          </div>
+        </aside>
+      </form>
     </main>
 
+    <footer class="site-footer">
+      <div>
+        <h3>Atelier Gourmand by OC</h3>
+        <p>{% if settings and settings.address %}{{ settings.address }}{% else %}Wilton Place, SW1X 7RL · London{% endif %}</p>
+      </div>
+      <div>
+        <p class="footer-label">Contact</p>
+        <p>{% if settings and settings.contact_email %}{{ settings.contact_email }}{% else %}hello@ateliergourmandbyoc.co.uk{% endif %}</p>
+      </div>
+      <div>
+        <p class="footer-label">Legal</p>
+        <p class="footer-legal">© 2026 Atelier Gourmand by OC. All rights reserved.</p>
+      </div>
+    </footer>
+
     <script>
+      const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+      if (csrfToken) {
+        document.querySelectorAll('form').forEach((form) => {
+          if (!form.querySelector('input[name="csrf_token"]')) {
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = 'csrf_token';
+            input.value = csrfToken;
+            form.appendChild(input);
+          }
+        });
+      }
+
       // Set minimum date to today
       const dateInput = document.getElementById('pickup_date');
       const today = new Date().toISOString().split('T')[0];
       dateInput.setAttribute('min', today);
+
+      const confirmPickupButton = document.getElementById('confirmPickupEmail');
+      const pickupConfirmNote = document.getElementById('pickupConfirmNote');
+
+      if (confirmPickupButton && pickupConfirmNote) {
+        confirmPickupButton.addEventListener('click', async () => {
+          confirmPickupButton.disabled = true;
+          pickupConfirmNote.textContent = 'Sending confirmation email...';
+          pickupConfirmNote.style.color = '#6c757d';
+
+          const payload = {
+            name: document.getElementById('name')?.value,
+            email: document.getElementById('email')?.value,
+            pickup_date: document.getElementById('pickup_date')?.value,
+            pickup_time: document.getElementById('pickup_time')?.value,
+            notes: document.getElementById('notes')?.value,
+          };
+
+          try {
+            const response = await fetch('/api/confirm-pickup', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                ...(csrfToken ? { 'X-CSRFToken': csrfToken } : {}),
+              },
+              body: JSON.stringify(payload),
+            });
+
+            const result = await response.json();
+            if (response.ok) {
+              pickupConfirmNote.textContent = result.message || 'Confirmation email sent.';
+              pickupConfirmNote.style.color = '#28a745';
+            } else {
+              pickupConfirmNote.textContent = result.error || 'Unable to send confirmation email.';
+              pickupConfirmNote.style.color = '#dc3545';
+            }
+          } catch (error) {
+            pickupConfirmNote.textContent = 'Connection error. Please try again.';
+            pickupConfirmNote.style.color = '#dc3545';
+          } finally {
+            confirmPickupButton.disabled = false;
+          }
+        });
+      }
     </script>
   </body>
 </html>

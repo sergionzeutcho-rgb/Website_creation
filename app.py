@@ -1,24 +1,166 @@
 import os
 import uuid
+import requests
+import stripe
+import smtplib
+from email.message import EmailMessage
+from urllib.parse import urlparse
 from flask import Flask, render_template, request, jsonify, redirect, url_for, flash, send_from_directory, session
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 from flask_ckeditor import CKEditor
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
+from flask_wtf.csrf import CSRFProtect, CSRFError
+from paypalcheckoutsdk.core import PayPalHttpClient, SandboxEnvironment, LiveEnvironment
+from paypalcheckoutsdk.orders import OrdersCreateRequest, OrdersCaptureRequest
 from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.utils import secure_filename
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from dotenv import load_dotenv
 
 load_dotenv()
 
+def get_bool_env(name, default=False):
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {'1', 'true', 'yes', 'on'}
+
+def send_email(to_email, subject, body, from_email=None, html_body=None):
+    smtp_host = app.config.get('SMTP_HOST')
+    smtp_port = app.config.get('SMTP_PORT')
+    smtp_user = app.config.get('SMTP_USERNAME')
+    smtp_pass = app.config.get('SMTP_PASSWORD')
+    use_tls = app.config.get('SMTP_USE_TLS')
+    sender = from_email or app.config.get('SMTP_FROM')
+
+    if not smtp_host or not sender:
+        raise RuntimeError('SMTP is not configured')
+
+    msg = EmailMessage()
+    msg['Subject'] = subject
+    msg['From'] = sender
+    msg['To'] = to_email
+    msg.set_content(body or '')
+    if html_body:
+        msg.add_alternative(html_body, subtype='html')
+
+    with smtplib.SMTP(smtp_host, smtp_port) as server:
+        if use_tls:
+            server.starttls()
+        if smtp_user and smtp_pass:
+            server.login(smtp_user, smtp_pass)
+        server.send_message(msg)
+
+def build_order_confirmation_body(order):
+    currency_symbol = CURRENCY_SYMBOLS.get(order.currency or app.config['DEFAULT_CURRENCY'], '£')
+    lines = [
+        'Thank you for your order with Atelier Gourmand by OC!',
+        '',
+        f'Order number: {order.order_number}',
+        f'Pickup date: {order.pickup_date}',
+        f'Pickup time: {order.pickup_time}',
+        '',
+        'Items:'
+    ]
+    for item in order.items:
+        line_total = item.total_price
+        lines.append(f"- {item.product_name} x{item.quantity} ({currency_symbol}{line_total:.2f})")
+    lines.extend([
+        '',
+        f'Total: {currency_symbol}{order.total:.2f}',
+        '',
+        f"Special instructions: {order.notes or 'None'}",
+        '',
+        'We look forward to welcoming you.'
+    ])
+    return '\n'.join(lines)
+
+
+def build_order_confirmation_html(order):
+    settings = SiteSettings.query.first()
+    currency_symbol = CURRENCY_SYMBOLS.get(order.currency or app.config['DEFAULT_CURRENCY'], '£')
+    return render_template(
+        'emails/order_confirmation.html',
+        order=order,
+        settings=settings,
+        currency_symbol=currency_symbol,
+    )
+
 app = Flask(__name__)
-app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
+app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
+
+secret_key = os.getenv('SECRET_KEY')
+if not secret_key:
+    if os.getenv('FLASK_ENV') == 'production':
+        raise RuntimeError('SECRET_KEY must be set in production')
+    secret_key = 'dev-secret-key-change-in-production'
+
+app.config['SECRET_KEY'] = secret_key
 app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'sqlite:///atelier.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['UPLOAD_FOLDER'] = os.getenv('UPLOAD_FOLDER', 'static/uploads')
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
+app.config['SESSION_COOKIE_SECURE'] = get_bool_env(
+    'SESSION_COOKIE_SECURE', os.getenv('FLASK_ENV') == 'production'
+)
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = os.getenv('SESSION_COOKIE_SAMESITE', 'Lax')
+app.config['REMEMBER_COOKIE_SECURE'] = get_bool_env(
+    'REMEMBER_COOKIE_SECURE', os.getenv('FLASK_ENV') == 'production'
+)
+app.config['REMEMBER_COOKIE_HTTPONLY'] = True
+app.config['REMEMBER_COOKIE_SAMESITE'] = os.getenv('REMEMBER_COOKIE_SAMESITE', 'Lax')
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=8)
+app.config['PREFERRED_URL_SCHEME'] = os.getenv('PREFERRED_URL_SCHEME', 'https')
+app.config['WTF_CSRF_TIME_LIMIT'] = 3600
+app.config['STRIPE_PUBLIC_KEY'] = os.getenv('STRIPE_PUBLIC_KEY')
+app.config['STRIPE_SECRET_KEY'] = os.getenv('STRIPE_SECRET_KEY')
+app.config['STRIPE_WEBHOOK_SECRET'] = os.getenv('STRIPE_WEBHOOK_SECRET')
+app.config['PAYPAL_CLIENT_ID'] = os.getenv('PAYPAL_CLIENT_ID')
+app.config['PAYPAL_CLIENT_SECRET'] = os.getenv('PAYPAL_CLIENT_SECRET')
+app.config['PAYPAL_WEBHOOK_ID'] = os.getenv('PAYPAL_WEBHOOK_ID')
+app.config['PAYPAL_MODE'] = os.getenv('PAYPAL_MODE', 'sandbox')
+app.config['PAYMENT_BASE_URL'] = os.getenv('PAYMENT_BASE_URL')
+app.config['PAYMENT_SUCCESS_PATH'] = os.getenv('PAYMENT_SUCCESS_PATH', '/payment/success')
+app.config['PAYMENT_CANCEL_PATH'] = os.getenv('PAYMENT_CANCEL_PATH', '/payment/cancel')
+app.config['DEFAULT_CURRENCY'] = os.getenv('DEFAULT_CURRENCY', 'GBP').upper()
+app.config['BASE_CURRENCY'] = os.getenv('BASE_CURRENCY', 'GBP').upper()
+app.config['AUTO_CURRENCY_BY_IP'] = get_bool_env('AUTO_CURRENCY_BY_IP', True)
+app.config['CURRENCY_RATES'] = os.getenv('CURRENCY_RATES', '')
+app.config['GEOIP_COUNTRY_HEADER'] = os.getenv('GEOIP_COUNTRY_HEADER')
+app.config['SMTP_HOST'] = os.getenv('SMTP_HOST')
+app.config['SMTP_PORT'] = int(os.getenv('SMTP_PORT', '587'))
+app.config['SMTP_USERNAME'] = os.getenv('SMTP_USERNAME')
+app.config['SMTP_PASSWORD'] = os.getenv('SMTP_PASSWORD')
+app.config['SMTP_USE_TLS'] = get_bool_env('SMTP_USE_TLS', True)
+app.config['SMTP_FROM'] = os.getenv('SMTP_FROM')
 
 # Allowed extensions for uploads
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp', 'mp4', 'mov', 'avi'}
+
+CURRENCY_SYMBOLS = {
+    'GBP': '£',
+    'EUR': '€',
+    'USD': '$',
+    'CAD': 'C$',
+}
+
+COUNTRY_TO_CURRENCY = {
+    'GB': 'GBP',
+    'UK': 'GBP',
+    'IE': 'EUR',
+    'FR': 'EUR',
+    'DE': 'EUR',
+    'ES': 'EUR',
+    'IT': 'EUR',
+    'NL': 'EUR',
+    'BE': 'EUR',
+    'LU': 'EUR',
+    'US': 'USD',
+    'CA': 'CAD',
+}
 
 # Import db from models and initialize with app
 from models import (db, User, Product, ProductVariant, ProductImage, HeroSection, MaisonSection, 
@@ -27,9 +169,12 @@ from models import (db, User, Product, ProductVariant, ProductImage, HeroSection
 
 db.init_app(app)
 ckeditor = CKEditor(app)
+csrf = CSRFProtect(app)
+limiter = Limiter(get_remote_address, app=app, default_limits=[])
 
 login_manager = LoginManager(app)
 login_manager.login_view = 'admin_login'
+login_manager.session_protection = 'strong'
 
 # Ensure upload folder exists
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
@@ -39,6 +184,105 @@ os.makedirs(os.path.join(app.config['UPLOAD_FOLDER'], 'maison'), exist_ok=True)
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+def build_base_url():
+    if app.config['PAYMENT_BASE_URL']:
+        return app.config['PAYMENT_BASE_URL'].rstrip('/')
+    return request.url_root.rstrip('/')
+
+def parse_currency_rates(raw_rates):
+    rates = {}
+    if not raw_rates:
+        return rates
+    for pair in raw_rates.split(','):
+        if ':' not in pair:
+            continue
+        code, value = pair.split(':', 1)
+        code = code.strip().upper()
+        try:
+            rates[code] = float(value.strip())
+        except ValueError:
+            continue
+    return rates
+
+def get_country_code():
+    header_name = app.config.get('GEOIP_COUNTRY_HEADER')
+    if header_name:
+        country = request.headers.get(header_name)
+        if country:
+            return country.upper()
+    for name in ['CF-IPCountry', 'X-Appengine-Country', 'X-Country-Code']:
+        country = request.headers.get(name)
+        if country:
+            return country.upper()
+    return None
+
+def get_order_currency():
+    if app.config['AUTO_CURRENCY_BY_IP']:
+        country = get_country_code()
+        if country and country in COUNTRY_TO_CURRENCY:
+            return COUNTRY_TO_CURRENCY[country]
+    return app.config['DEFAULT_CURRENCY']
+
+def get_currency_rate(base_currency, target_currency):
+    if base_currency == target_currency:
+        return 1.0
+    rates = parse_currency_rates(app.config['CURRENCY_RATES'])
+    return rates.get(target_currency)
+
+def convert_amount(amount, rate):
+    return round(amount * rate, 2)
+
+def get_paypal_environment():
+    mode = app.config['PAYPAL_MODE'].lower()
+    if mode == 'live':
+        return LiveEnvironment(
+            client_id=app.config['PAYPAL_CLIENT_ID'],
+            client_secret=app.config['PAYPAL_CLIENT_SECRET']
+        )
+    return SandboxEnvironment(
+        client_id=app.config['PAYPAL_CLIENT_ID'],
+        client_secret=app.config['PAYPAL_CLIENT_SECRET']
+    )
+
+def get_paypal_client():
+    return PayPalHttpClient(get_paypal_environment())
+
+def get_paypal_api_base():
+    return 'https://api-m.paypal.com' if app.config['PAYPAL_MODE'].lower() == 'live' else 'https://api-m.sandbox.paypal.com'
+
+def get_paypal_access_token():
+    response = requests.post(
+        f"{get_paypal_api_base()}/v1/oauth2/token",
+        auth=(app.config['PAYPAL_CLIENT_ID'], app.config['PAYPAL_CLIENT_SECRET']),
+        data={'grant_type': 'client_credentials'},
+        timeout=15
+    )
+    response.raise_for_status()
+    return response.json().get('access_token')
+
+def verify_paypal_webhook(event, headers):
+    webhook_id = app.config.get('PAYPAL_WEBHOOK_ID')
+    if not webhook_id:
+        return False
+    token = get_paypal_access_token()
+    payload = {
+        'auth_algo': headers.get('PAYPAL-AUTH-ALGO'),
+        'cert_url': headers.get('PAYPAL-CERT-URL'),
+        'transmission_id': headers.get('PAYPAL-TRANSMISSION-ID'),
+        'transmission_sig': headers.get('PAYPAL-TRANSMISSION-SIG'),
+        'transmission_time': headers.get('PAYPAL-TRANSMISSION-TIME'),
+        'webhook_id': webhook_id,
+        'event': event,
+    }
+    response = requests.post(
+        f"{get_paypal_api_base()}/v1/notifications/verify-webhook-signature",
+        headers={'Authorization': f"Bearer {token}", 'Content-Type': 'application/json'},
+        json=payload,
+        timeout=15
+    )
+    response.raise_for_status()
+    return response.json().get('verification_status') == 'SUCCESS'
 
 def get_or_create_cart():
     """Get existing cart or create new one for session"""
@@ -60,6 +304,16 @@ def get_or_create_cart():
             session['cart_id'] = cart.id
     return cart
 
+def is_safe_next(next_url):
+    if not next_url:
+        return False
+    parsed = urlparse(next_url)
+    if parsed.scheme or parsed.netloc:
+        return False
+    if next_url.startswith('//'):
+        return False
+    return next_url.startswith('/')
+
 @app.context_processor
 def inject_cart_count():
     """Make cart count available in all templates"""
@@ -74,6 +328,39 @@ def inject_cart_count():
 def load_user(user_id):
     return User.query.get(int(user_id))
 
+@app.before_request
+def enforce_https():
+    if get_bool_env('FORCE_HTTPS', False) and not request.is_secure:
+        return redirect(request.url.replace('http://', 'https://', 1), code=301)
+
+@app.after_request
+def set_security_headers(response):
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+    response.headers['Permissions-Policy'] = 'geolocation=(), microphone=(), camera=()'
+    response.headers['Content-Security-Policy'] = (
+        "default-src 'self'; "
+        "img-src 'self' data: https:; "
+        "style-src 'self' 'unsafe-inline' https:; "
+        "script-src 'self' 'unsafe-inline' https:; "
+        "font-src 'self' data: https:; "
+        "connect-src 'self' https:; "
+        "frame-ancestors 'none'; "
+        "base-uri 'self'; "
+        "form-action 'self'"
+    )
+    if request.is_secure or get_bool_env('FORCE_HTTPS', False):
+        response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
+    return response
+
+@app.errorhandler(CSRFError)
+def handle_csrf_error(error):
+    if request.accept_mimetypes.best == 'application/json' or request.is_json:
+        return jsonify({'error': 'CSRF token missing or invalid'}), 400
+    flash('Your session has expired. Please try again.', 'error')
+    return redirect(request.referrer or url_for('index'))
+
 # Public routes
 @app.route('/')
 def index():
@@ -82,7 +369,9 @@ def index():
     maison = MaisonSection.query.first()
     settings = SiteSettings.query.first()
     nav_items = NavigationItem.query.filter_by(is_active=True).order_by(NavigationItem.order).all()
-    return render_template('index.html', hero=hero, products=products, maison=maison, settings=settings, nav_items=nav_items)
+    order_currency = get_order_currency()
+    currency_symbol = CURRENCY_SYMBOLS.get(order_currency, order_currency + ' ')
+    return render_template('index.html', hero=hero, products=products, maison=maison, settings=settings, nav_items=nav_items, currency_symbol=currency_symbol)
 
 @app.route('/api/products')
 def api_products():
@@ -110,6 +399,7 @@ def api_hero():
         })
     return jsonify({})
 
+@limiter.limit('20 per minute')
 @app.route('/api/booking', methods=['POST'])
 def api_booking():
     data = request.json
@@ -153,7 +443,55 @@ def api_booking():
     )
     db.session.add(booking)
     db.session.commit()
-    return jsonify({'message': 'Booking confirmed', 'id': booking.id}), 201
+    session['pickup_confirmed'] = True
+    session['pickup_date'] = pickup_date.isoformat()
+    session['pickup_time'] = pickup_time
+    session['booking_email'] = data.get('email')
+    session['booking_phone'] = data.get('phone')
+    session.modified = True
+    return jsonify({
+        'message': 'Booking confirmed',
+        'id': booking.id,
+        'redirect_url': url_for('index') + '#seasonal'
+    }), 201
+
+@app.route('/api/confirm-pickup', methods=['POST'])
+def api_confirm_pickup():
+    if not session.get('pickup_confirmed'):
+        return jsonify({'error': 'Pickup slot not confirmed'}), 400
+
+    data = request.get_json(silent=True) or {}
+    pickup_date = session.get('pickup_date')
+    pickup_time = session.get('pickup_time')
+    email = data.get('email') or session.get('booking_email')
+    name = (data.get('name') or '').strip()
+    notes = (data.get('notes') or '').strip()
+
+    if not pickup_date or not pickup_time:
+        return jsonify({'error': 'Pickup details are missing'}), 400
+    if not email:
+        return jsonify({'error': 'Email is required'}), 400
+
+    settings = SiteSettings.query.first()
+    from_email = app.config.get('SMTP_FROM') or (settings.contact_email if settings else None)
+    subject = 'Pickup slot confirmation - Atelier Gourmand by OC'
+    greeting = f"Hello {name}," if name else "Hello,"
+    instructions = notes if notes else 'None'
+    body = (
+        f"{greeting}\n\n"
+        "Your pickup slot is confirmed with the following details:\n"
+        f"Date: {pickup_date}\n"
+        f"Time: {pickup_time}\n\n"
+        f"Special instructions: {instructions}\n\n"
+        "If you need to make changes, please reply to this email."
+    )
+
+    try:
+        send_email(email, subject, body, from_email=from_email)
+    except Exception:
+        return jsonify({'error': 'Unable to send confirmation email'}), 500
+
+    return jsonify({'message': 'Confirmation email sent'}), 200
 
 @app.route('/api/available-slots')
 def api_available_slots():
@@ -170,7 +508,9 @@ def product_detail(slug):
         (Product.slug == slug) | (Product.id == slug)
     ).first_or_404()
     settings = SiteSettings.query.first()
-    return render_template('product_detail.html', product=product, settings=settings)
+    order_currency = get_order_currency()
+    currency_symbol = CURRENCY_SYMBOLS.get(order_currency, order_currency + ' ')
+    return render_template('product_detail.html', product=product, settings=settings, currency_symbol=currency_symbol)
 
 @app.route('/cart')
 def view_cart():
@@ -178,7 +518,22 @@ def view_cart():
     cart = get_or_create_cart()
     settings = SiteSettings.query.first()
     subtotal = sum(item.quantity * item.price_at_add for item in cart.items)
-    return render_template('cart.html', cart=cart, subtotal=subtotal, settings=settings)
+    order_currency = get_order_currency()
+    base_currency = app.config['BASE_CURRENCY']
+    fx_rate = get_currency_rate(base_currency, order_currency)
+    if fx_rate is None:
+        order_currency = base_currency
+        fx_rate = 1.0
+    display_subtotal = convert_amount(subtotal, fx_rate)
+    currency_symbol = CURRENCY_SYMBOLS.get(order_currency, order_currency + ' ')
+    return render_template(
+        'cart.html',
+        cart=cart,
+        subtotal=subtotal,
+        display_subtotal=display_subtotal,
+        currency_symbol=currency_symbol,
+        settings=settings
+    )
 
 @app.route('/cart/add', methods=['POST'])
 def add_to_cart():
@@ -218,6 +573,9 @@ def add_to_cart():
         
         db.session.commit()
         flash(f'{product.name} added to cart!', 'success')
+        next_url = request.form.get('next')
+        if is_safe_next(next_url):
+            return redirect(next_url)
         return redirect(request.referrer or url_for('index'))
     except Exception as e:
         flash(f'Error adding to cart: {str(e)}', 'error')
@@ -228,7 +586,8 @@ def update_cart_item(item_id):
     """Update cart item quantity"""
     try:
         quantity = request.form.get('quantity', 1, type=int)
-        cart_item = CartItem.query.get_or_404(item_id)
+        cart = get_or_create_cart()
+        cart_item = CartItem.query.filter_by(id=item_id, cart_id=cart.id).first_or_404()
         
         if quantity > 0:
             cart_item.quantity = quantity
@@ -249,7 +608,8 @@ def update_cart_item(item_id):
 def remove_from_cart(item_id):
     """Remove item from cart"""
     try:
-        cart_item = CartItem.query.get_or_404(item_id)
+        cart = get_or_create_cart()
+        cart_item = CartItem.query.filter_by(id=item_id, cart_id=cart.id).first_or_404()
         db.session.delete(cart_item)
         db.session.commit()
         flash('Item removed from cart!', 'success')
@@ -265,20 +625,81 @@ def checkout():
     if not cart.items:
         flash('Your cart is empty!', 'warning')
         return redirect(url_for('index'))
+
+    if request.method == 'POST':
+        fulfillment_method = request.form.get('fulfillment_method', 'pickup')
+        if fulfillment_method != 'delivery' and not session.get('pickup_confirmed'):
+            flash('Please confirm your pickup slot before checkout.', 'error')
+            return redirect(url_for('index') + '#booking')
+    else:
+        if not session.get('pickup_confirmed'):
+            flash('Please confirm your pickup slot before checkout.', 'error')
+            return redirect(url_for('index') + '#booking')
     
+    order_currency = get_order_currency()
+    base_currency = app.config['BASE_CURRENCY']
+    fx_rate = get_currency_rate(base_currency, order_currency)
+    if fx_rate is None:
+        order_currency = base_currency
+        fx_rate = 1.0
+
+    settings = SiteSettings.query.first()
+    stripe_public_key = app.config['STRIPE_PUBLIC_KEY'] or (settings.stripe_public_key if settings else None)
+    stripe_secret_key = app.config['STRIPE_SECRET_KEY'] or (settings.stripe_secret_key if settings else None)
+    paypal_client_id = app.config['PAYPAL_CLIENT_ID'] or (settings.paypal_client_id if settings else None)
+    paypal_client_secret = app.config['PAYPAL_CLIENT_SECRET']
+
+    available_payment_methods = []
+    if stripe_public_key and stripe_secret_key:
+        available_payment_methods.append('stripe')
+    if paypal_client_id and paypal_client_secret:
+        available_payment_methods.append('paypal')
+    if not available_payment_methods:
+        flash('Online card payments are not configured yet.', 'error')
+        return redirect(url_for('view_cart'))
+
     if request.method == 'POST':
         try:
             customer_name = request.form.get('name')
             customer_email = request.form.get('email')
             customer_phone = request.form.get('phone')
-            pickup_date = datetime.strptime(request.form.get('pickup_date'), '%Y-%m-%d').date()
-            pickup_time = request.form.get('pickup_time')
+            pickup_date_str = request.form.get('pickup_date') or session.get('pickup_date')
+            pickup_time = request.form.get('pickup_time') or session.get('pickup_time')
             notes = request.form.get('notes')
-            payment_method = request.form.get('payment_method', 'cash_on_pickup')
+            payment_method = request.form.get('payment_method') or available_payment_methods[0]
+
+            if not pickup_date_str or not pickup_time:
+                flash('Pickup date and time are required.', 'error')
+                return redirect(url_for('checkout'))
+
+            if session.get('pickup_confirmed'):
+                if pickup_date_str != session.get('pickup_date') or pickup_time != session.get('pickup_time'):
+                    flash('Pickup slot must match the confirmed booking.', 'error')
+                    return redirect(url_for('checkout'))
+
+            pickup_date = datetime.strptime(pickup_date_str, '%Y-%m-%d').date()
+
+            if not customer_name or not customer_email:
+                flash('Name and email are required.', 'error')
+                return redirect(url_for('checkout'))
+
+            if payment_method not in available_payment_methods:
+                flash('Selected payment method is unavailable.', 'error')
+                return redirect(url_for('checkout'))
+
+            if payment_method == 'stripe' and not (stripe_public_key and stripe_secret_key):
+                flash('Stripe payments are not configured yet.', 'error')
+                return redirect(url_for('checkout'))
+            if payment_method == 'paypal' and not (paypal_client_id and paypal_client_secret):
+                flash('PayPal payments are not configured yet.', 'error')
+                return redirect(url_for('checkout'))
             
             subtotal = sum(item.quantity * item.price_at_add for item in cart.items)
             tax = 0
             total = subtotal + tax
+            display_subtotal = convert_amount(subtotal, fx_rate)
+            display_tax = convert_amount(tax, fx_rate)
+            display_total = convert_amount(total, fx_rate)
             
             order_number = f"ORD-{datetime.now().strftime('%Y%m%d')}-{uuid.uuid4().hex[:8].upper()}"
             
@@ -292,8 +713,10 @@ def checkout():
                 subtotal=subtotal,
                 tax=tax,
                 total=total,
+                currency=order_currency,
+                fx_rate=fx_rate,
                 payment_method=payment_method,
-                payment_status='pending' if payment_method == 'cash_on_pickup' else 'pending',
+                payment_status='pending',
                 status='pending',
                 notes=notes
             )
@@ -313,12 +736,94 @@ def checkout():
                 )
                 db.session.add(order_item)
             
+            if payment_method == 'stripe':
+                stripe.api_key = stripe_secret_key
+                success_url = f"{build_base_url()}{app.config['PAYMENT_SUCCESS_PATH']}?order_number={order_number}"
+                cancel_url = f"{build_base_url()}{app.config['PAYMENT_CANCEL_PATH']}?order_number={order_number}"
+                session_obj = stripe.checkout.Session.create(
+                    mode='payment',
+                    payment_method_types=['card'],
+                    line_items=[
+                        {
+                            'price_data': {
+                                'currency': order_currency.lower(),
+                                'product_data': {
+                                    'name': f"Order {order_number}",
+                                },
+                                'unit_amount': int(display_total * 100),
+                            },
+                            'quantity': 1,
+                        }
+                    ],
+                    success_url=success_url,
+                    cancel_url=cancel_url,
+                    client_reference_id=str(order.id),
+                    metadata={
+                        'order_number': order_number,
+                        'order_id': order.id,
+                        'currency': order_currency,
+                        'fx_rate': fx_rate,
+                    },
+                )
+                order.payment_intent_id = session_obj.get('payment_intent')
+                db.session.commit()
+                return redirect(session_obj.url, code=303)
+
+            if payment_method == 'paypal':
+                app.config['PAYPAL_CLIENT_ID'] = paypal_client_id
+                app.config['PAYPAL_CLIENT_SECRET'] = paypal_client_secret
+                success_url = f"{build_base_url()}{app.config['PAYMENT_SUCCESS_PATH']}?order_number={order_number}"
+                cancel_url = f"{build_base_url()}{app.config['PAYMENT_CANCEL_PATH']}?order_number={order_number}"
+                request_obj = OrdersCreateRequest()
+                request_obj.prefer('return=representation')
+                request_obj.request_body({
+                    'intent': 'CAPTURE',
+                    'purchase_units': [
+                        {
+                            'reference_id': order_number,
+                            'amount': {
+                                'currency_code': order_currency,
+                                'value': f"{display_total:.2f}",
+                            },
+                        }
+                    ],
+                    'application_context': {
+                        'return_url': success_url,
+                        'cancel_url': cancel_url,
+                    },
+                })
+                paypal_client = get_paypal_client()
+                response = paypal_client.execute(request_obj)
+                order.payment_intent_id = response.result.id
+                db.session.commit()
+                approval_url = next(
+                    (link.href for link in response.result.links if link.rel == 'approve'),
+                    None
+                )
+                if not approval_url:
+                    flash('Unable to start PayPal checkout.', 'error')
+                    return redirect(url_for('checkout'))
+                return redirect(approval_url, code=303)
+
             for item in cart.items:
                 db.session.delete(item)
-            
+
             db.session.commit()
             session.pop('cart_id', None)
-            
+
+            try:
+                body = build_order_confirmation_body(order)
+                html_body = build_order_confirmation_html(order)
+                send_email(
+                    order.customer_email,
+                    f'Order confirmation {order.order_number}',
+                    body,
+                    from_email=app.config.get('SMTP_FROM') or order.customer_email,
+                    html_body=html_body,
+                )
+            except Exception:
+                pass
+
             flash(f'Order {order_number} placed successfully!', 'success')
             return redirect(url_for('order_confirmation', order_number=order_number))
             
@@ -327,31 +832,143 @@ def checkout():
             flash(f'Error processing order: {str(e)}', 'error')
             return redirect(url_for('checkout'))
     
-    settings = SiteSettings.query.first()
     booking_settings = BookingSettings.query.first()
     time_slots = AvailableTimeSlot.query.filter_by(is_active=True).order_by(AvailableTimeSlot.time_slot).all()
     
     subtotal = sum(item.quantity * item.price_at_add for item in cart.items)
     tax = 0
     total = subtotal + tax
+    display_subtotal = convert_amount(subtotal, fx_rate)
+    display_tax = convert_amount(tax, fx_rate)
+    display_total = convert_amount(total, fx_rate)
+    currency_symbol = CURRENCY_SYMBOLS.get(order_currency, order_currency + ' ')
+    prefill_pickup_date = session.get('pickup_date')
+    prefill_pickup_time = session.get('pickup_time')
+    prefill_email = session.get('booking_email')
+    prefill_phone = session.get('booking_phone')
     
     return render_template('checkout.html', 
                          cart=cart, 
                          subtotal=subtotal, 
                          tax=tax, 
                          total=total,
+                         display_subtotal=display_subtotal,
+                         display_tax=display_tax,
+                         display_total=display_total,
+                         currency_symbol=currency_symbol,
+                         order_currency=order_currency,
                          settings=settings,
                          booking_settings=booking_settings,
-                         time_slots=time_slots)
+                         time_slots=time_slots,
+                         prefill_pickup_date=prefill_pickup_date,
+                         prefill_pickup_time=prefill_pickup_time,
+                         prefill_email=prefill_email,
+                         prefill_phone=prefill_phone,
+                         stripe_available='stripe' in available_payment_methods,
+                         paypal_available='paypal' in available_payment_methods,
+                         available_payment_methods=available_payment_methods)
 
 @app.route('/order/<order_number>')
 def order_confirmation(order_number):
     """Order confirmation page"""
     order = Order.query.filter_by(order_number=order_number).first_or_404()
     settings = SiteSettings.query.first()
-    return render_template('order_confirmation.html', order=order, settings=settings)
+    currency_symbol = CURRENCY_SYMBOLS.get(order.currency or app.config['DEFAULT_CURRENCY'], '£')
+    return render_template('order_confirmation.html', order=order, settings=settings, currency_symbol=currency_symbol)
+
+@app.route('/payment/success')
+def payment_success():
+    order_number = request.args.get('order_number')
+    order = Order.query.filter_by(order_number=order_number).first()
+    if not order:
+        flash('Order not found.', 'error')
+        return redirect(url_for('index'))
+    session_key = f'order_email_sent_{order_number}'
+    if not session.get(session_key):
+        try:
+            body = build_order_confirmation_body(order)
+            html_body = build_order_confirmation_html(order)
+            send_email(
+                order.customer_email,
+                f'Order confirmation {order.order_number}',
+                body,
+                from_email=app.config.get('SMTP_FROM') or order.customer_email,
+                html_body=html_body,
+            )
+            session[session_key] = True
+            session.modified = True
+        except Exception:
+            pass
+    return redirect(url_for('order_confirmation', order_number=order_number))
+
+@app.route('/payment/cancel')
+def payment_cancel():
+    order_number = request.args.get('order_number')
+    if order_number:
+        flash('Payment was canceled. You can try again.', 'warning')
+        return redirect(url_for('checkout'))
+    flash('Payment was canceled.', 'warning')
+    return redirect(url_for('checkout'))
+
+@app.route('/webhooks/stripe', methods=['POST'])
+@csrf.exempt
+def stripe_webhook():
+    if not app.config['STRIPE_WEBHOOK_SECRET']:
+        return jsonify({'error': 'Webhook secret not configured'}), 400
+    payload = request.get_data()
+    sig_header = request.headers.get('Stripe-Signature')
+    try:
+        event = stripe.Webhook.construct_event(
+            payload, sig_header, app.config['STRIPE_WEBHOOK_SECRET']
+        )
+    except (ValueError, stripe.error.SignatureVerificationError):
+        return jsonify({'error': 'Invalid payload'}), 400
+
+    event_type = event.get('type')
+    data_object = event.get('data', {}).get('object', {})
+    if event_type in ['checkout.session.completed', 'checkout.session.async_payment_succeeded']:
+        order_number = data_object.get('metadata', {}).get('order_number')
+        order = Order.query.filter_by(order_number=order_number).first()
+        if order:
+            order.payment_status = 'paid'
+            order.status = 'confirmed'
+            db.session.commit()
+    elif event_type in ['checkout.session.async_payment_failed', 'payment_intent.payment_failed']:
+        order_number = data_object.get('metadata', {}).get('order_number')
+        order = Order.query.filter_by(order_number=order_number).first()
+        if order:
+            order.payment_status = 'failed'
+            db.session.commit()
+
+    return jsonify({'status': 'ok'})
+
+@app.route('/webhooks/paypal', methods=['POST'])
+@csrf.exempt
+def paypal_webhook():
+    event = request.get_json(silent=True) or {}
+    try:
+        verified = verify_paypal_webhook(event, request.headers)
+    except Exception:
+        return jsonify({'error': 'Webhook verification failed'}), 400
+    if not verified:
+        return jsonify({'error': 'Invalid webhook signature'}), 400
+
+    event_type = event.get('event_type')
+    resource = event.get('resource', {})
+    order_id = resource.get('id')
+    order = Order.query.filter_by(payment_intent_id=order_id).first()
+    if order and event_type in ['CHECKOUT.ORDER.APPROVED', 'PAYMENT.CAPTURE.COMPLETED']:
+        order.payment_status = 'paid'
+        order.status = 'confirmed'
+        db.session.commit()
+    elif order and event_type in ['PAYMENT.CAPTURE.DENIED', 'PAYMENT.CAPTURE.REFUNDED']:
+        order.payment_status = 'failed'
+        db.session.commit()
+
+    return jsonify({'status': 'ok'})
 
 # Admin routes
+@limiter.limit('5 per minute')
 @app.route('/admin/login', methods=['GET', 'POST'])
 def admin_login():
     if current_user.is_authenticated:
@@ -369,7 +986,7 @@ def admin_login():
     
     return render_template('admin/login.html')
 
-@app.route('/admin/logout')
+@app.route('/admin/logout', methods=['POST'])
 @login_required
 def admin_logout():
     logout_user()

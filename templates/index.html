@@ -3,6 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="csrf-token" content="{{ csrf_token() }}" />
     <title>{% if settings %}{{ settings.site_title }}{% else %}Atelier Gourmand by OC | London{% endif %}</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -153,7 +154,7 @@
         <div class="card-grid" id="productsGrid">
           {% if products %}
             {% for product in products %}
-            <a href="{{ url_for('product_detail', slug=product.slug or product.id) }}" style="text-decoration: none; color: inherit; display: block">
+            <a href="{{ url_for('product_detail', slug=product.slug or product.id) }}" class="product-card-link" data-product-id="{{ product.id }}" data-product-name="{{ product.name }}" data-product-price="{{ product.price or 0 }}" data-product-image="{{ product.image_url or 'https://images.unsplash.com/photo-1542826438-bd32f43d626f?auto=format&fit=crop&w=900&q=80' }}" data-product-url="{{ url_for('product_detail', slug=product.slug or product.id) }}" style="text-decoration: none; color: inherit; display: block">
               <article class="card" style="transition: transform 0.3s ease, box-shadow 0.3s ease; cursor: pointer">
                 <img
                   src="{% if product.image_url %}{{ product.image_url }}{% else %}https://images.unsplash.com/photo-1542826438-bd32f43d626f?auto=format&fit=crop&w=900&q=80{% endif %}"
@@ -163,7 +164,7 @@
                   <h3>{{ product.name }}</h3>
                   <p>{{ product.short_description or product.description }}</p>
                   {% if product.price %}
-                  <p style="margin-top: 0.5rem; font-weight: 600; color: var(--gold);">£{{ "%.2f"|format(product.price) }}</p>
+                  <p style="margin-top: 0.5rem; font-weight: 600; color: var(--gold);">{{ currency_symbol }}{{ "%.2f"|format(product.price) }}</p>
                   {% endif %}
                 </div>
               </article>
@@ -240,6 +241,44 @@
       </section>
     </main>
 
+    <div class="quick-cart" id="quickCart" hidden>
+      <div class="quick-cart-backdrop" data-quick-cart-close></div>
+      <div class="quick-cart-panel" role="dialog" aria-modal="true" aria-label="Add to cart">
+        <div class="quick-cart-media">
+          <a id="quickCartMediaLink" class="quick-cart-media-link" href="#">
+            <img id="quickCartImage" src="" alt="Selected product">
+          </a>
+        </div>
+        <div>
+          <div class="quick-cart-header">
+            <div>
+              <a id="quickCartTitleLink" class="quick-cart-title-link" href="#">
+                <h3 class="quick-cart-title" id="quickCartName"></h3>
+              </a>
+              <p class="quick-cart-meta">Add your quantity and continue.</p>
+            </div>
+            <button class="quick-cart-close" type="button" aria-label="Close" data-quick-cart-close>×</button>
+          </div>
+          <form id="quickCartForm" action="{{ url_for('add_to_cart') }}" method="POST">
+            <input type="hidden" name="product_id" id="quickCartProductId">
+            <input type="hidden" name="next" id="quickCartNext" value="{{ url_for('view_cart') }}">
+            <div class="quick-cart-row">
+              <div class="quick-cart-qty">
+                <label for="quickCartQty">Qty</label>
+                <input id="quickCartQty" name="quantity" type="number" min="1" max="99" value="1">
+              </div>
+              <div class="quick-cart-total" id="quickCartTotal"></div>
+            </div>
+            <div class="quick-cart-actions">
+              <button type="submit" class="btn-primary" data-next="{{ url_for('view_cart') }}">Add & view cart</button>
+              <button type="submit" class="btn-sec" data-next="{{ url_for('checkout') }}">Checkout now</button>
+            </div>
+          </form>
+          <button id="quickCartDetails" type="button" class="btn-sec quick-cart-details">View details</button>
+        </div>
+      </div>
+    </div>
+
     <footer class="site-footer">
       <div>
         <h3>Atelier Gourmand by OC</h3>
@@ -275,6 +314,10 @@
           {% endif %}
         </div>
       </div>
+      <div>
+        <p class="footer-label">Legal</p>
+        <p class="footer-legal">© 2026 Atelier Gourmand by OC. All rights reserved.</p>
+      </div>
     </footer>
 
     <!-- Chat Widgets -->
@@ -299,6 +342,106 @@
     {% endif %}
 
     <script>
+      const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+      if (csrfToken) {
+        document.querySelectorAll('form').forEach((form) => {
+          if (!form.querySelector('input[name="csrf_token"]')) {
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = 'csrf_token';
+            input.value = csrfToken;
+            form.appendChild(input);
+          }
+        });
+      }
+
+      const currencySymbol = "{{ currency_symbol }}";
+      const quickCart = document.getElementById('quickCart');
+      const quickCartName = document.getElementById('quickCartName');
+      const quickCartImage = document.getElementById('quickCartImage');
+      const quickCartMediaLink = document.getElementById('quickCartMediaLink');
+      const quickCartTitleLink = document.getElementById('quickCartTitleLink');
+      const quickCartTotal = document.getElementById('quickCartTotal');
+      const quickCartQty = document.getElementById('quickCartQty');
+      const quickCartProductId = document.getElementById('quickCartProductId');
+      const quickCartNext = document.getElementById('quickCartNext');
+      const quickCartDetails = document.getElementById('quickCartDetails');
+
+      function formatPrice(value) {
+        return `${currencySymbol}${value.toFixed(2)}`;
+      }
+
+      function updateQuickCartTotal(price) {
+        const qty = parseInt(quickCartQty.value || '1', 10);
+        const total = price * Math.max(qty, 1);
+        quickCartTotal.textContent = formatPrice(total);
+      }
+
+      function openQuickCart(data) {
+        const price = parseFloat(data.price || '0');
+        const productUrl = data.url || '#';
+        quickCartName.textContent = data.name || '';
+        quickCartImage.src = data.image || '';
+        quickCartProductId.value = data.id || '';
+        quickCartQty.value = 1;
+        quickCartMediaLink.href = productUrl;
+        quickCartTitleLink.href = productUrl;
+        quickCartDetails.setAttribute('data-url', productUrl);
+        quickCartDetails.disabled = !productUrl || productUrl === '#';
+        updateQuickCartTotal(price);
+        quickCart.setAttribute('data-price', price.toString());
+        quickCart.removeAttribute('hidden');
+        requestAnimationFrame(() => quickCart.classList.add('is-visible'));
+      }
+
+      function closeQuickCart() {
+        quickCart.classList.remove('is-visible');
+        setTimeout(() => quickCart.setAttribute('hidden', 'true'), 400); // Match animation duration
+      }
+
+      quickCartDetails?.addEventListener('click', () => {
+        const targetUrl = quickCartDetails.getAttribute('data-url');
+        if (!targetUrl || targetUrl.endsWith('#')) {
+          return;
+        }
+        closeQuickCart();
+        setTimeout(() => window.location.assign(targetUrl), 400);
+      });
+
+      document.querySelectorAll('.product-card-link').forEach((link) => {
+        link.addEventListener('click', (event) => {
+          event.preventDefault();
+          openQuickCart({
+            id: link.dataset.productId,
+            name: link.dataset.productName,
+            price: link.dataset.productPrice,
+            image: link.dataset.productImage,
+            url: link.dataset.productUrl,
+          });
+        });
+      });
+
+      quickCart?.querySelectorAll('[data-quick-cart-close]').forEach((el) => {
+        el.addEventListener('click', closeQuickCart);
+      });
+
+      document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && quickCart?.classList.contains('is-visible')) {
+          closeQuickCart();
+        }
+      });
+
+      quickCartQty?.addEventListener('input', () => {
+        const price = parseFloat(quickCart.getAttribute('data-price') || '0');
+        updateQuickCartTotal(price);
+      });
+
+      quickCart?.querySelectorAll('button[data-next]').forEach((button) => {
+        button.addEventListener('click', () => {
+          quickCartNext.value = button.getAttribute('data-next');
+        });
+      });
+
       // Load available time slots with dynamic grouping
       async function loadTimeSlots() {
         try {
@@ -313,9 +456,9 @@
           
           // Group slots by time period
           const periods = {
-            morning: { label: 'Matin (6h-12h)', slots: [] },
-            afternoon: { label: 'Après-midi (12h-18h)', slots: [] },
-            evening: { label: 'Soir (18h-23h)', slots: [] }
+            morning: { label: 'Morning (6am-12pm)', slots: [] },
+            afternoon: { label: 'Afternoon (12pm-6pm)', slots: [] },
+            evening: { label: 'Evening (6pm-11pm)', slots: [] }
           };
           
           slots.forEach(slot => {
@@ -330,7 +473,7 @@
           });
           
           // Build select with optgroups
-          select.innerHTML = '<option value="">Choisir un créneau horaire</option>';
+          select.innerHTML = '<option value="">Select a time slot</option>';
           
           Object.values(periods).forEach(period => {
             if (period.slots.length > 0) {
@@ -383,6 +526,7 @@
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
+                ...(csrfToken ? { 'X-CSRFToken': csrfToken } : {}),
               },
               body: JSON.stringify(bookingData)
             });
@@ -392,6 +536,11 @@
               note.textContent = `Slot confirmed for ${bookingData.pickup_date} at ${bookingData.pickup_time}. We will send you a confirmation email.`;
               note.style.color = "#28a745";
               form.reset();
+              if (result.redirect_url) {
+                setTimeout(() => {
+                  window.location.assign(result.redirect_url);
+                }, 600);
+              }
             } else {
               const error = await response.json();
               note.textContent = error.error || "There was an error. Please try again or contact us directly.";

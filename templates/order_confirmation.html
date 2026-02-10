@@ -8,6 +8,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Inter:wght@300;400;500&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
+    <link rel="stylesheet" href="{{ url_for('static', filename='animations.css') }}" />
   </head>
   <body>
     <header class="site-header">
@@ -66,7 +67,7 @@
                 {% if item.variant_name %}<div style="font-size: 14px; color: #777">{{ item.variant_name }}</div>{% endif %}
                 <div style="font-size: 14px; color: #777">Qty: {{ item.quantity }}</div>
               </div>
-              <div style="font-weight: 600">£{{ "%.2f"|format(item.total_price) }}</div>
+              <div style="font-weight: 600">{{ currency_symbol }}{{ "%.2f"|format(item.total_price) }}</div>
             </div>
             {% endfor %}
           </div>
@@ -74,27 +75,23 @@
           <div style="border-top: 2px solid var(--gold); padding-top: 20px; margin-top: 20px">
             <div style="display: flex; justify-content: space-between; margin-bottom: 8px">
               <span>Subtotal:</span>
-              <span>£{{ "%.2f"|format(order.subtotal) }}</span>
+              <span>{{ currency_symbol }}{{ "%.2f"|format(order.subtotal) }}</span>
             </div>
             <div style="display: flex; justify-content: space-between; margin-bottom: 16px">
               <span>Tax:</span>
-              <span>£{{ "%.2f"|format(order.tax) }}</span>
+              <span>{{ currency_symbol }}{{ "%.2f"|format(order.tax) }}</span>
             </div>
             <div style="display: flex; justify-content: space-between; font-size: 24px; font-weight: 700; color: var(--gold)">
               <span>Total:</span>
-              <span>£{{ "%.2f"|format(order.total) }}</span>
+              <span>{{ currency_symbol }}{{ "%.2f"|format(order.total) }}</span>
             </div>
           </div>
 
-          {% if order.payment_method == 'cash_on_pickup' %}
-          <div style="background: #fff3cd; padding: 16px; border-radius: 8px; margin-top: 24px; border-left: 4px solid #ffc107">
-            <strong>Payment:</strong> Pay on pickup (cash or card accepted)
+          {% set paid = order.payment_status and order.payment_status.lower() in ['paid', 'succeeded', 'completed'] %}
+          <div style="background: {% if paid %}#d4edda{% else %}#fff3cd{% endif %}; padding: 16px; border-radius: 8px; margin-top: 24px; border-left: 4px solid {% if paid %}#28a745{% else %}#ffc107{% endif %}">
+            <strong>Payment:</strong> {{ order.payment_method|replace('_', ' ')|title }} - {{ order.payment_status|title if order.payment_status else 'Pending' }}<br>
+            <span style="font-size: 14px; color: #555">Payment is collected in advance via Stripe or PayPal.</span>
           </div>
-          {% else %}
-          <div style="background: #d4edda; padding: 16px; border-radius: 8px; margin-top: 24px; border-left: 4px solid #28a745">
-            <strong>Payment Status:</strong> {{ order.payment_status|title }}
-          </div>
-          {% endif %}
         </div>
 
         <p style="color: #777; margin-bottom: 32px">
@@ -110,11 +107,15 @@
     <footer class="site-footer">
       <div>
         <h3>Atelier Gourmand by OC</h3>
-        <p>{% if settings and settings.address %}{{ settings.address }}{% else %}Wilton Place, SW1X 7RL · London{% endif %}</p>
+        <p>{% if settings and settings.address %}{{ settings.address }}{% else %}Wilton Place, SW1X 7RL - London{% endif %}</p>
       </div>
       <div>
         <p class="footer-label">Contact</p>
         <p>{% if settings and settings.contact_email %}{{ settings.contact_email }}{% else %}hello@ateliergourmandbyoc.co.uk{% endif %}</p>
+      </div>
+      <div>
+        <p class="footer-label">Legal</p>
+        <p class="footer-legal">(c) 2026 Atelier Gourmand by OC. All rights reserved.</p>
       </div>
     </footer>
   </body>
