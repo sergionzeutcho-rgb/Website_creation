@@ -5,6 +5,26 @@
 {% block content %}
 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 32px">
   <h1 style="font-size: 32px; font-weight: 600">Orders</h1>
+  <form method="get" style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+    <input type="text" name="search" value="{{ search or '' }}" placeholder="Search order #, name, email" style="padding: 10px 12px; border: 1px solid #dee2e6; border-radius: 6px; min-width: 220px;">
+    <select name="status" style="padding: 10px 12px; border: 1px solid #dee2e6; border-radius: 6px;">
+      <option value="">All statuses</option>
+      {% for s in ['pending','confirmed','preparing','ready','completed','cancelled'] %}
+      <option value="{{ s }}" {% if status_filter == s %}selected{% endif %}>{{ s|title }}</option>
+      {% endfor %}
+    </select>
+    <select name="payment" style="padding: 10px 12px; border: 1px solid #dee2e6; border-radius: 6px;">
+      <option value="">All payments</option>
+      {% for p in ['pending','paid','failed','refunded'] %}
+      <option value="{{ p }}" {% if payment_filter == p %}selected{% endif %}>{{ p|title }}</option>
+      {% endfor %}
+    </select>
+    <select name="sort" style="padding: 10px 12px; border: 1px solid #dee2e6; border-radius: 6px;">
+      <option value="desc" {% if sort != 'asc' %}selected{% endif %}>Newest first</option>
+      <option value="asc" {% if sort == 'asc' %}selected{% endif %}>Oldest first</option>
+    </select>
+    <button type="submit" style="padding: 10px 14px; border: 1px solid #c5a572; background: #c5a572; color: white; border-radius: 6px; font-weight: 600; cursor: pointer;">Filter</button>
+  </form>
 </div>
 
 {% if orders %}
@@ -15,6 +35,7 @@
         <th style="padding: 16px; text-align: left; font-weight: 600">Order #</th>
         <th style="padding: 16px; text-align: left; font-weight: 600">Customer</th>
         <th style="padding: 16px; text-align: left; font-weight: 600">Pickup</th>
+        <th style="padding: 16px; text-align: left; font-weight: 600">Message</th>
         <th style="padding: 16px; text-align: left; font-weight: 600">Total</th>
         <th style="padding: 16px; text-align: left; font-weight: 600">Status</th>
         <th style="padding: 16px; text-align: left; font-weight: 600">Payment</th>
@@ -33,10 +54,19 @@
         <td style="padding: 16px">
           <div style="font-weight: 500">{{ order.customer_name }}</div>
           <div style="font-size: 13px; color: #6c757d">{{ order.customer_email }}</div>
+          <div style="font-size: 12px; color: #6c757d; margin-top: 4px">{% if order.customer_id %}Account{% else %}Guest{% endif %}</div>
         </td>
         <td style="padding: 16px">
           <div>{{ order.pickup_date.strftime('%Y-%m-%d') }}</div>
           <div style="font-size: 13px; color: #6c757d">{{ order.pickup_time }}</div>
+        </td>
+        <td style="padding: 16px; font-size: 13px; color: #6c757d; max-width: 220px;">
+          {% if order.notes %}
+          <div style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ order.notes }}</div>
+          <a href="{{ url_for('admin_order_detail', id=order.id) }}#messages" style="color: #c5a572; font-weight: 600; font-size: 12px; text-decoration: none;">View</a>
+          {% else %}
+          <span style="color: #adb5bd;">—</span>
+          {% endif %}
         </td>
         <td style="padding: 16px; font-weight: 600">£{{ "%.2f"|format(order.total) }}</td>
         <td style="padding: 16px">

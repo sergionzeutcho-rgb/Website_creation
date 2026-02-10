@@ -186,6 +186,41 @@ a {
   transform: translateY(-2px);
 }
 
+.nav-cart {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border: 1px solid #e6ded1;
+  border-radius: 999px;
+  background: #fff;
+  color: var(--ink);
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.06);
+}
+
+.nav-cart:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.08);
+}
+
+.cart-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 26px;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--gold);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
 .hero {
   display: grid;
   grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
@@ -1013,6 +1048,46 @@ h1 {
 
 .field textarea {
   min-height: 120px;
+}
+
+.pill-radio {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid rgba(10, 9, 8, 0.15);
+  border-radius: 999px;
+  padding: 10px 14px;
+  cursor: pointer;
+  transition: var(--transition);
+  background: var(--surface);
+  user-select: none;
+}
+
+.pill-radio input {
+  display: none;
+}
+
+.pill-radio span {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.pill-radio input:checked + span,
+.pill-radio:hover span {
+  color: var(--accent);
+}
+
+.pill-radio input:checked ~ span,
+.pill-radio input:checked + span {
+  color: var(--accent);
+}
+
+.pill-radio input:checked ~ span,
+.pill-radio input:checked + span,
+.pill-radio:hover {
+  border-color: var(--gold);
+  box-shadow: 0 6px 18px rgba(197, 165, 114, 0.15);
 }
 
 .payment-option {

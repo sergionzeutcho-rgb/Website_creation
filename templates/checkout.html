@@ -53,23 +53,81 @@
         </ol>
       </div>
 
+      {% if current_customer %}
+      <section class="card-surface form-card" style="margin-bottom: 20px; display: flex; justify-content: space-between; gap: 16px; align-items: center; flex-wrap: wrap">
+        <div>
+          <p class="eyebrow" style="margin-bottom: 4px">Signed in</p>
+          <div style="font-weight: 600; font-size: 18px">{{ current_customer.name or current_customer.email }}</div>
+          <div class="summary-note" style="margin-top: 4px">{{ current_customer.email }}{% if current_customer.phone %} · {{ current_customer.phone }}{% endif %}</div>
+        </div>
+        <form action="{{ url_for('customer_logout') }}" method="POST" style="display: flex; align-items: center; gap: 10px">
+          <input type="hidden" name="next" value="{{ url_for('checkout') }}">
+          <button type="submit" class="btn-sec">Sign out</button>
+        </form>
+      </section>
+      {% else %}
+      <section class="card-surface form-card" style="margin-bottom: 20px; display: flex; justify-content: space-between; gap: 16px; align-items: center; flex-wrap: wrap">
+        <div>
+          <p class="eyebrow" style="margin-bottom: 4px">Faster checkout</p>
+          <p class="summary-note" style="margin: 0">Stay on this page: create an account while you fill your details or continue as a guest.</p>
+        </div>
+        <div style="display: flex; gap: 10px; flex-wrap: wrap">
+          <button type="button" class="btn-primary" id="ctaCreateAccount" data-target="#contact-info">Create account</button>
+          <button type="button" class="btn-sec" id="ctaGuest" data-target="#contact-info">Continue as guest</button>
+          <a class="btn-sec" href="{{ url_for('customer_login', next=url_for('checkout')) }}">Sign in</a>
+        </div>
+      </section>
+      {% endif %}
+
       <form action="{{ url_for('checkout') }}" method="POST" class="checkout-layout">
         <input type="hidden" name="fulfillment_method" value="pickup">
         <div>
-          <section class="card-surface form-card">
+          <section class="card-surface form-card" id="contact-info">
             <h2>Contact information</h2>
+            <p class="summary-note" style="margin-top: 4px;">Choose to continue as guest or create an account without leaving this page.</p>
+            {% if not current_customer %}
+            <div class="field" style="margin-top: 12px;">
+              <label>Account preference</label>
+              <div class="pill-options" style="display: flex; gap: 10px; flex-wrap: wrap;">
+                <label class="pill-radio">
+                  <input type="radio" name="account_choice" value="guest" id="account_guest" checked>
+                  <span>Continue as guest</span>
+                </label>
+                <label class="pill-radio">
+                  <input type="radio" name="account_choice" value="create" id="account_create">
+                  <span>Create an account</span>
+                </label>
+              </div>
+            </div>
+            {% endif %}
             <div class="field">
               <label for="name">Full name</label>
-              <input type="text" id="name" name="name" required>
+              <input type="text" id="name" name="name" value="{{ prefill_name or '' }}" required>
             </div>
             <div class="field">
               <label for="email">Email</label>
-              <input type="email" id="email" name="email" value="{{ prefill_email or '' }}" required>
+              <input type="email" id="email" name="email" value="{{ prefill_email or '' }}" {% if current_customer %}readonly{% endif %} required>
+              {% if current_customer %}
+              <small class="summary-note">Using your account email.</small>
+              {% endif %}
             </div>
             <div class="field">
               <label for="phone">Phone</label>
               <input type="tel" id="phone" name="phone" value="{{ prefill_phone or '' }}">
             </div>
+            {% if not current_customer %}
+            <div class="field create-account-fields" style="display: none;">
+              <label for="account_password">Password (min 8 characters)</label>
+              <input type="password" id="account_password" name="account_password" autocomplete="new-password">
+            </div>
+            <div class="field create-account-fields" style="display: none;">
+              <label for="account_password_confirm">Confirm password</label>
+              <input type="password" id="account_password_confirm" name="account_password_confirm" autocomplete="new-password">
+            </div>
+            <p class="summary-note create-account-fields" style="display: none;">We’ll create your account with the email above and keep you signed in.</p>
+            {% else %}
+            <p class="summary-note">Signed in as {{ current_customer.email }}.</p>
+            {% endif %}
           </section>
 
           <section class="card-surface form-card">
@@ -133,7 +191,7 @@
 
           <section class="card-surface form-card">
             <h2>Payment method</h2>
-            {% set default_payment = available_payment_methods[0] if available_payment_methods else 'stripe' %}
+            {% set default_payment = available_payment_methods[0] if available_payment_methods else ( 'test' if allow_test_checkout else 'stripe') %} 
             <p class="summary-note">Payment is required in advance via secure card checkout.</p>
 
             {% if stripe_available %}
@@ -154,6 +212,10 @@
                 <p>Secure payment via PayPal</p>
               </div>
             </label>
+            {% endif %}
+
+            {% if not stripe_available and not paypal_available and allow_test_checkout %}
+            <p class="summary-note" style="margin-top: 8px;">Test checkout is enabled. Live payments are not configured.</p>
             {% endif %}
           </section>
         </div>
@@ -193,6 +255,12 @@
             <button type="submit" class="btn-primary">Place order</button>
             <a href="{{ url_for('view_cart') }}" class="btn-sec">Back to cart</a>
           </div>
+          {% if allow_test_checkout %}
+          <div style="margin-top: 12px; padding: 10px; border: 1px dashed #d4c5a7; border-radius: 8px; background: #fffaf2;">
+            <p class="summary-note" style="margin-bottom: 8px">Test checkout (no payment) for QA only.</p>
+            <button type="submit" name="test_checkout" value="1" class="btn-sec" style="width: 100%">Run test confirmation</button>
+          </div>
+          {% endif %}
         </aside>
       </form>
     </main>
@@ -274,6 +342,41 @@
           }
         });
       }
+
+      const accountGuest = document.getElementById('account_guest');
+      const accountCreate = document.getElementById('account_create');
+      const createFields = document.querySelectorAll('.create-account-fields');
+      function toggleAccountFields() {
+        const show = accountCreate && accountCreate.checked;
+        createFields.forEach((el) => {
+          el.style.display = show ? '' : 'none';
+        });
+      }
+      if (accountGuest && accountCreate) {
+        accountGuest.addEventListener('change', toggleAccountFields);
+        accountCreate.addEventListener('change', toggleAccountFields);
+        toggleAccountFields();
+      }
+
+      function scrollToContact(setCreate = false) {
+        const contact = document.querySelector('#contact-info');
+        if (setCreate && accountCreate) {
+          accountCreate.checked = true;
+          accountGuest.checked = false;
+          toggleAccountFields();
+        }
+        contact?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        if (setCreate && document.getElementById('account_password')) {
+          document.getElementById('account_password').focus({ preventScroll: true });
+        } else if (document.getElementById('name')) {
+          document.getElementById('name').focus({ preventScroll: true });
+        }
+      }
+
+      const ctaCreate = document.getElementById('ctaCreateAccount');
+      const ctaGuest = document.getElementById('ctaGuest');
+      ctaCreate?.addEventListener('click', () => scrollToContact(true));
+      ctaGuest?.addEventListener('click', () => scrollToContact(false));
     </script>
   </body>
 </html>

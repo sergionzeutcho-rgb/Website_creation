@@ -23,6 +23,15 @@
           <div style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: #6c757d; margin-bottom: 4px">Email</div>
           <div>{{ order.customer_email }}</div>
         </div>
+        <div>
+          <div style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: #6c757d; margin-bottom: 4px">Account</div>
+          {% if order.customer %}
+          <div style="font-weight: 600">Registered</div>
+          <div style="font-size: 13px; color: #6c757d">Customer ID #{{ order.customer.id }}</div>
+          {% else %}
+          <div style="font-weight: 600">Guest checkout</div>
+          {% endif %}
+        </div>
         {% if order.customer_phone %}
         <div>
           <div style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: #6c757d; margin-bottom: 4px">Phone</div>
@@ -46,11 +55,14 @@
         </div>
       </div>
 
+    </div>
+
+    <div id="messages" style="background: white; border-radius: 8px; padding: 32px; margin-bottom: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.1)">
+      <h2 style="font-size: 20px; font-weight: 600; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 2px solid #c5a572">Message from customer</h2>
       {% if order.notes %}
-      <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #dee2e6">
-        <div style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: #6c757d; margin-bottom: 8px">Customer Notes</div>
-        <div style="background: #f8f9fa; padding: 16px; border-radius: 4px">{{ order.notes }}</div>
-      </div>
+      <div style="background: #f8f9fa; padding: 16px; border-radius: 6px; white-space: pre-wrap;">{{ order.notes }}</div>
+      {% else %}
+      <div style="color: #6c757d;">No message provided.</div>
       {% endif %}
     </div>
 
@@ -137,6 +149,20 @@
         <div>{{ order.updated_at.strftime('%Y-%m-%d %H:%M') }}</div>
       </div>
       {% endif %}
+
+      <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid #dee2e6; display: flex; flex-direction: column; gap: 10px;">
+        <a href="{{ url_for('admin_order_invoice', id=order.id) }}" target="_blank" style="text-align: center; padding: 10px; border: 1px solid #c5a572; border-radius: 6px; color: #c5a572; text-decoration: none; font-weight: 600;">View / Print invoice</a>
+        <a href="{{ url_for('admin_order_print', id=order.id) }}" target="_blank" style="text-align: center; padding: 10px; border: 1px solid #dee2e6; border-radius: 6px; color: #343a40; text-decoration: none; font-weight: 600;">Print order (summary)</a>
+        <form action="{{ url_for('admin_send_invoice', id=order.id) }}" method="POST" style="margin: 0;">
+          <button type="submit" style="width: 100%; padding: 10px; background: white; border: 1px solid #dee2e6; border-radius: 6px; font-weight: 600; cursor: pointer;">Email invoice to customer</button>
+        </form>
+        <form action="{{ url_for('admin_cancel_order', id=order.id) }}" method="POST" style="margin: 0;">
+          <button type="submit" style="width: 100%; padding: 10px; background: #f8d7da; border: 1px solid #f5c6cb; border-radius: 6px; color: #721c24; font-weight: 700; cursor: pointer;">Cancel order</button>
+        </form>
+        <form action="{{ url_for('admin_delete_order', id=order.id) }}" method="POST" style="margin: 0;" onsubmit="return confirm('Delete this order permanently?');">
+          <button type="submit" style="width: 100%; padding: 10px; background: #343a40; border: 1px solid #343a40; border-radius: 6px; color: white; font-weight: 700; cursor: pointer;">Delete order</button>
+        </form>
+      </div>
     </form>
   </div>
 </div>

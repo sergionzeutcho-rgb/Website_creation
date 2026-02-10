@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Invoice {{ invoice_number }}</title>
+    <style>
+      :root {
+        --text: #1f1f1f;
+        --muted: #555;
+        --border: #e5e5e5;
+        --gold: #c5a572;
+      }
+      body {
+        font-family: "Inter", Arial, sans-serif;
+        color: var(--text);
+        margin: 24px;
+      }
+      .invoice-shell {
+        max-width: 900px;
+        margin: 0 auto;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        overflow: hidden;
+        box-shadow: 0 4px 14px rgba(0,0,0,0.05);
+      }
+      header {
+        padding: 24px 28px;
+        background: #faf8f4;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      h1 { margin: 0; font-size: 24px; }
+      .logo { height: 48px; }
+      .section { padding: 24px 28px; border-top: 1px solid var(--border); }
+      .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
+      .label { font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; }
+      .value { font-weight: 600; }
+      table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+      th, td { padding: 10px 8px; border-bottom: 1px solid var(--border); text-align: left; }
+      th { background: #fafafa; font-size: 13px; }
+      .totals { margin-top: 12px; }
+      .totals div { display: flex; justify-content: space-between; padding: 4px 0; }
+      .foot { font-size: 12px; color: var(--muted); margin-top: 10px; }
+      .badge { color: white; background: #28a745; padding: 6px 10px; border-radius: 20px; font-size: 12px; font-weight: 700; }
+      .bank-box { background: #fafafa; padding: 12px; border-radius: 8px; border: 1px dashed var(--border); font-size: 13px; }
+      @media print {
+        body { margin: 0; }
+        .no-print { display: none; }
+        .invoice-shell { box-shadow: none; border: none; }
+        a { color: inherit; text-decoration: none; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="no-print" style="max-width: 900px; margin: 0 auto 12px; display: flex; justify-content: flex-end; gap: 8px;">
+      <a href="{{ url_for('admin_order_detail', id=order.id) }}" style="text-decoration: none; color: var(--gold);">← Back</a>
+      <button onclick="window.print()" style="padding: 8px 14px; border: 1px solid var(--border); background: white; border-radius: 6px; cursor: pointer;">Print / Save PDF</button>
+    </div>
+
+    <div class="invoice-shell">
+      <header>
+        <div>
+          <div class="label">Invoice</div>
+          <h1>{{ invoice_number }}</h1>
+          <div style="margin-top: 4px; color: var(--muted);">Date: {{ invoice_date.strftime('%Y-%m-%d') }}</div>
+          <div style="margin-top: 4px; color: var(--muted);">Account / Order: {{ order.order_number }}</div>
+        </div>
+        <div style="text-align: right;">
+          {% if settings and settings.logo_url %}
+          <img src="{{ settings.logo_url }}" alt="Logo" class="logo" />
+          {% else %}
+          <div style="font-weight: 700; letter-spacing: 0.08em;">Atelier Gourmand by OC</div>
+          {% endif %}
+        </div>
+      </header>
+
+      <div class="section">
+        <div class="grid">
+          <div>
+            <div class="label">Billed To</div>
+            <div class="value">{{ order.customer_name }}</div>
+            <div style="color: var(--muted);">{{ order.customer_email }}</div>
+            {% if order.customer_phone %}<div style="color: var(--muted);">{{ order.customer_phone }}</div>{% endif %}
+          </div>
+          <div>
+            <div class="label">Pickup</div>
+            <div class="value">{{ order.pickup_date.strftime('%Y-%m-%d') }} at {{ order.pickup_time }}</div>
+          </div>
+          <div>
+            <div class="label">Seller</div>
+            <div class="value">{{ settings.company_name or settings.site_title or 'Atelier Gourmand by OC' }}</div>
+            {% if settings.company_invoice_address %}<div style="color: var(--muted); white-space: pre-wrap;">{{ settings.company_invoice_address }}</div>{% endif %}
+            {% if settings.company_invoice_email %}<div style="color: var(--muted);">{{ settings.company_invoice_email }}</div>{% endif %}
+            {% if settings.company_invoice_phone %}<div style="color: var(--muted);">{{ settings.company_invoice_phone }}</div>{% endif %}
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <table>
+          <thead>
+            <tr>
+              <th style="width: 45%;">Description</th>
+              <th style="width: 15%;">Qty</th>
+              <th style="width: 20%;">Unit</th>
+              <th style="width: 20%; text-align: right;">Line Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in order.items %}
+            <tr>
+              <td>{{ item.product_name }}{% if item.variant_name %} — {{ item.variant_name }}{% endif %}</td>
+              <td>{{ item.quantity }}</td>
+              <td>{{ currency_symbol }}{{ "%.2f"|format(item.unit_price) }}</td>
+              <td style="text-align: right;">{{ currency_symbol }}{{ "%.2f"|format(item.total_price) }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        <div class="totals">
+          <div><span>Subtotal</span><span>{{ currency_symbol }}{{ "%.2f"|format(order.subtotal) }}</span></div>
+          <div><span>Tax</span><span>{{ currency_symbol }}{{ "%.2f"|format(order.tax) }}</span></div>
+          <div style="font-weight: 700; font-size: 16px;"><span>Total</span><span>{{ currency_symbol }}{{ "%.2f"|format(order.total) }}</span></div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="grid" style="align-items: flex-start;">
+          <div>
+            <div class="label">Payment</div>
+            <div class="value">{{ order.payment_method|replace('_',' ')|title }} — {{ order.payment_status|title if order.payment_status else 'Pending' }}</div>
+          </div>
+          <div class="bank-box">
+            <div style="font-weight: 600; margin-bottom: 6px;">Bank Details</div>
+            {% if settings.company_bank_name %}<div>{{ settings.company_bank_name }}</div>{% endif %}
+            {% if settings.company_bank_account %}<div>Account: {{ settings.company_bank_account }}</div>{% endif %}
+            {% if settings.company_sort_code %}<div>Sort code: {{ settings.company_sort_code }}</div>{% endif %}
+            {% if settings.company_iban %}<div>IBAN: {{ settings.company_iban }}</div>{% endif %}
+            {% if settings.company_swift %}<div>SWIFT/BIC: {{ settings.company_swift }}</div>{% endif %}
+          </div>
+        </div>
+        <div class="grid" style="margin-top: 12px;">
+          <div>
+            {% if settings.company_vat_number %}<div class="label">VAT number</div><div class="value">{{ settings.company_vat_number }}</div>{% endif %}
+            {% if settings.company_registration %}<div class="label" style="margin-top: 8px;">Company number</div><div class="value">{{ settings.company_registration }}</div>{% endif %}
+          </div>
+          <div>
+            {% if settings.invoice_notes %}<div class="foot">{{ settings.invoice_notes }}</div>{% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

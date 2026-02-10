@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Order {{ order.order_number }}</title>
+  <style>
+    :root { --ink:#111; --muted:#555; --border:#e3e3e3; --gold:#c5a572; }
+    body { font-family: "Inter", Arial, sans-serif; color: var(--ink); margin: 24px; }
+    .shell { max-width: 960px; margin: 0 auto; }
+    h1 { margin: 0 0 12px; font-size: 26px; }
+    h2 { margin: 0 0 10px; font-size: 16px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+    .section { border: 1px solid var(--border); border-radius: 8px; padding: 16px 18px; margin-bottom: 14px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+    .label { font-size: 12px; color: var(--muted); letter-spacing: 0.05em; text-transform: uppercase; }
+    .value { font-weight: 600; }
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    th, td { padding: 10px 6px; border-bottom: 1px solid var(--border); text-align: left; }
+    th { background: #fafafa; font-size: 13px; }
+    .totals { margin-top: 10px; }
+    .totals div { display: flex; justify-content: space-between; padding: 4px 0; }
+    .chip { display: inline-block; padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; margin-right: 6px; }
+    .chip-status { background: #f4f1e8; color: #6c5a35; }
+    .chip-pay { background: #e7f4ea; color: #1d6b3a; }
+    .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+    .logo { max-height: 40px; }
+    @media print {
+      body { margin: 0; }
+      .no-print { display: none; }
+      .shell { box-shadow: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <div class="header">
+      <div>
+        <div class="label">Order</div>
+        <h1>{{ order.order_number }}</h1>
+        <div class="label">Created {{ order.created_at.strftime('%Y-%m-%d %H:%M') }}</div>
+      </div>
+      <div style="text-align: right;">
+        {% if settings and settings.logo_url %}
+        <img src="{{ settings.logo_url }}" alt="Logo" class="logo">
+        {% else %}
+        <div style="font-weight:700; letter-spacing:0.08em;">Atelier Gourmand</div>
+        {% endif %}
+        <div style="margin-top:6px;">
+          <span class="chip chip-status">{{ order.status|title }}</span>
+          <span class="chip chip-pay">{{ order.payment_status|title }}</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Customer</h2>
+      <div class="grid">
+        <div>
+          <div class="label">Name</div>
+          <div class="value">{{ order.customer_name }}</div>
+        </div>
+        <div>
+          <div class="label">Email</div>
+          <div class="value">{{ order.customer_email }}</div>
+        </div>
+        {% if order.customer_phone %}
+        <div>
+          <div class="label">Phone</div>
+          <div class="value">{{ order.customer_phone }}</div>
+        </div>
+        {% endif %}
+        <div>
+          <div class="label">Account</div>
+          <div class="value">{% if order.customer %}Registered (ID {{ order.customer.id }}){% else %}Guest{% endif %}</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Pickup</h2>
+      <div class="grid">
+        <div>
+          <div class="label">Date</div>
+          <div class="value">{{ order.pickup_date.strftime('%Y-%m-%d') }}</div>
+        </div>
+        <div>
+          <div class="label">Time</div>
+          <div class="value">{{ order.pickup_time }}</div>
+        </div>
+        {% if order.notes %}
+        <div>
+          <div class="label">Notes</div>
+          <div class="value" style="white-space: pre-wrap; color: var(--muted);">{{ order.notes }}</div>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Items</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Description</th>
+            <th>Qty</th>
+            <th>Unit</th>
+            <th style="text-align:right;">Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in order.items %}
+          <tr>
+            <td>{{ item.product_name }}{% if item.variant_name %} — {{ item.variant_name }}{% endif %}</td>
+            <td>{{ item.quantity }}</td>
+            <td>{{ currency_symbol }}{{ "%.2f"|format(item.unit_price) }}</td>
+            <td style="text-align:right;">{{ currency_symbol }}{{ "%.2f"|format(item.total_price) }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <div class="totals">
+        <div><span>Subtotal</span><span>{{ currency_symbol }}{{ "%.2f"|format(order.subtotal) }}</span></div>
+        <div><span>Tax</span><span>{{ currency_symbol }}{{ "%.2f"|format(order.tax) }}</span></div>
+        <div style="font-weight:700; font-size:16px;"><span>Total</span><span>{{ currency_symbol }}{{ "%.2f"|format(order.total) }}</span></div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Status & Payment</h2>
+      <div class="grid">
+        <div>
+          <div class="label">Order status</div>
+          <div class="value">{{ order.status|title }}</div>
+        </div>
+        <div>
+          <div class="label">Payment</div>
+          <div class="value">{{ order.payment_method|replace('_',' ')|title }} — {{ order.payment_status|title }}</div>
+        </div>
+        <div>
+          <div class="label">Created</div>
+          <div class="value">{{ order.created_at.strftime('%Y-%m-%d %H:%M') }}</div>
+        </div>
+        {% if order.updated_at %}
+        <div>
+          <div class="label">Updated</div>
+          <div class="value">{{ order.updated_at.strftime('%Y-%m-%d %H:%M') }}</div>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="no-print" style="text-align: right; margin-top: 12px;">
+      <button onclick="window.print()" style="padding: 10px 14px; border: 1px solid var(--border); background: white; border-radius: 6px; cursor: pointer;">Print</button>
+    </div>
+  </div>
+</body>
+</html>

@@ -31,7 +31,11 @@
                     <div style="width: 60px; height: 60px; background: #f0f0f0; border-radius: 8px;"></div>
                     {% endif %}
                 </td>
-                <td><strong>{{ product.name }}</strong><br><small style="color: #6c757d;">{{ product.description[:50] }}...</small></td>
+                <td>
+                    <strong>{{ product.name }}</strong><br>
+                    {% set desc = product.short_description or product.full_description or '' %}
+                    <small style="color: #6c757d;">{{ desc[:80] if desc else 'No description' }}</small>
+                </td>
                 <td>{% if product.price %}£{{ "%.2f"|format(product.price) }}{% else %}-{% endif %}</td>
                 <td>{{ product.order }}</td>
                 <td>

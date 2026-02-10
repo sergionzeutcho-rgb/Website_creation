@@ -30,8 +30,13 @@
       </div>
       <nav class="site-nav" aria-label="Primary">
         <a href="{{ url_for('index') }}">Home</a>
-        <a href="{{ url_for('view_cart') }}">Cart ({{ cart_count }})</a>
         <a class="nav-cta" href="{{ url_for('index') }}#booking">Book a slot</a>
+        {% if cart_count > 0 %}
+        <a class="nav-cart" href="{{ url_for('view_cart') }}">
+          <span>Cart</span>
+          <span class="cart-badge">{{ cart_count }}</span>
+        </a>
+        {% endif %}
       </nav>
     </header>
 
@@ -59,26 +64,54 @@
           <div>
             <h1 style="font-family: 'Playfair Display', serif; font-size: clamp(32px, 5vw, 48px); margin-bottom: 12px">{{ product.name }}</h1>
             
-            <p style="font-size: 28px; color: var(--gold); font-weight: 600; margin-bottom: 24px">
+            <p id="priceDisplay" data-base-price="{{ '%.2f'|format(product.price) }}" style="font-size: 28px; color: var(--gold); font-weight: 600; margin-bottom: 6px">
               {{ currency_symbol }}{{ "%.2f"|format(product.price) }}
             </p>
+            {% if product.variants %}
+            <p id="variantPriceNote" style="margin-bottom: 18px; color: #6c757d; font-size: 14px">Price updates when a variant is selected.</p>
+            {% else %}
+            <div style="margin-bottom: 18px"></div>
+            {% endif %}
 
             {% if product.short_description %}
             <p style="margin-bottom: 32px; line-height: 1.7; color: #555">{{ product.short_description }}</p>
             {% endif %}
 
-            <!-- Add to Cart Form -->
-            <form action="{{ url_for('add_to_cart') }}" method="POST" style="border-top: 1px solid #eee; padding-top: 32px">
+            <!-- Pickup selection + Add to Cart -->
+            <form id="productAddForm" action="{{ url_for('add_to_cart') }}" method="POST" style="border-top: 1px solid #eee; padding-top: 32px">
               <input type="hidden" name="product_id" value="{{ product.id }}">
+              <input type="hidden" id="selectedPickupTime" name="pickup_time_choice" value="">
               
+              <div style="padding: 18px; border: 1px solid #ececec; border-radius: 12px; margin-bottom: 20px; background: #faf9f7;">
+                <p style="font-weight: 600; margin-bottom: 4px">When would you like to collect?</p>
+                <p style="font-size: 14px; color: #6c757d; margin-bottom: 12px">Slots are limited; confirm your pickup before adding to cart.</p>
+                <div style="display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: center; margin-bottom: 12px;">
+                  <div>
+                    <label for="pickupDate" style="display: block; font-size: 13px; color: #6c757d; margin-bottom: 6px">Pickup date</label>
+                    <input type="date" id="pickupDate" name="pickup_date" style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 15px">
+                  </div>
+                  <div style="text-align: right; font-size: 13px; color: #6c757d;">All orders placed before 3:00 p.m. are ready the next day.</div>
+                </div>
+                <div>
+                  <label style="display: block; font-size: 13px; color: #6c757d; margin-bottom: 8px">Choose a time slot</label>
+                  <div id="slotButtons" style="display: flex; flex-wrap: wrap; gap: 10px;">
+                    <span style="font-size: 14px; color: #6c757d;">Loading slots...</span>
+                  </div>
+                </div>
+                <div style="margin-top: 10px; display: flex; justify-content: space-between; gap: 12px; align-items: center; flex-wrap: wrap;">
+                  <p id="slotStatus" style="margin: 0; font-size: 14px; color: #6c757d;"></p>
+                  <button type="button" id="changeSlotBtn" style="display: none; padding: 8px 12px; border: 1px solid #d4c5a7; background: #fff; border-radius: 8px; cursor: pointer; color: #7a6746; font-weight: 600;">Change slot</button>
+                </div>
+              </div>
+
               {% if product.variants %}
-              <div style="margin-bottom: 20px">
+              <div style="margin-bottom: 12px">
                 <label style="display: block; margin-bottom: 8px; font-size: 14px; text-transform: uppercase; letter-spacing: 0.1em">Select Variant</label>
-                <select name="variant_id" style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 16px">
-                  <option value="">Standard</option>
+                <select name="variant_id" id="variantSelect" style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 16px">
+                  <option value="" data-price-modifier="0" data-variant-name="Standard" data-stock="">Standard</option>
                   {% for variant in product.variants %}
                     {% if variant.is_active %}
-                    <option value="{{ variant.id }}">
+                    <option value="{{ variant.id }}" data-price-modifier="{{ variant.price_modifier or 0 }}" data-variant-name="{{ variant.name }}" data-stock="{% if variant.stock_quantity is not none %}{{ variant.stock_quantity }}{% endif %}">
                       {{ variant.name }} 
                       {% if variant.price_modifier > 0 %}(+£{{ "%.2f"|format(variant.price_modifier) }}){% endif %}
                       {% if variant.price_modifier < 0 %}(£{{ "%.2f"|format(variant.price_modifier) }}){% endif %}
@@ -87,6 +120,7 @@
                   {% endfor %}
                 </select>
               </div>
+              <div id="variantStockMessage" style="min-height: 18px; margin-bottom: 14px; font-size: 14px; color: #6c757d;"></div>
               {% endif %}
 
               <div style="margin-bottom: 20px">
@@ -132,6 +166,240 @@
       </div>
     </footer>
     <script>
+      const pickupDateInput = document.getElementById('pickupDate');
+      const slotButtons = document.getElementById('slotButtons');
+      const slotStatus = document.getElementById('slotStatus');
+      const selectedPickupTimeInput = document.getElementById('selectedPickupTime');
+      const form = document.getElementById('productAddForm');
+      const prefillDate = "{{ prefill_pickup_date or '' }}";
+      const prefillTime = "{{ prefill_pickup_time or '' }}";
+      const pickupLocked = {{ 'true' if pickup_confirmed else 'false' }};
+      const changeSlotBtn = document.getElementById('changeSlotBtn');
+      const priceDisplay = document.getElementById('priceDisplay');
+      const variantSelect = document.getElementById('variantSelect');
+      const variantStockMessage = document.getElementById('variantStockMessage');
+      const addToCartBtn = document.querySelector('#productAddForm button[type="submit"]');
+      const currencySymbol = "{{ currency_symbol }}";
+      const trackInventory = {{ 'true' if product.track_inventory else 'false' }};
+      const allowBackorder = {{ 'true' if product.allow_backorder else 'false' }};
+
+      function updateVariantUI() {
+        if (!priceDisplay) return;
+        const base = parseFloat(priceDisplay.dataset.basePrice || '0');
+        let modifier = 0;
+        let stock = '';
+        let variantName = '';
+        if (variantSelect) {
+          const option = variantSelect.options[variantSelect.selectedIndex];
+          modifier = parseFloat(option?.dataset.priceModifier || '0');
+          stock = option?.dataset.stock ?? '';
+          variantName = option?.dataset.variantName || '';
+        }
+        const updatedPrice = base + (isNaN(modifier) ? 0 : modifier);
+        priceDisplay.textContent = `${currencySymbol}${updatedPrice.toFixed(2)}`;
+
+        if (variantStockMessage) {
+          variantStockMessage.style.color = '#6c757d';
+          if (stock === '' || stock === undefined) {
+            variantStockMessage.textContent = '';
+            if (addToCartBtn) addToCartBtn.disabled = false;
+          } else {
+            const stockNum = parseInt(stock, 10);
+            if (Number.isNaN(stockNum)) {
+              variantStockMessage.textContent = '';
+              if (addToCartBtn) addToCartBtn.disabled = false;
+            } else if (stockNum <= 0) {
+              variantStockMessage.textContent = `${variantName || 'This variant'} is out of stock.`;
+              variantStockMessage.style.color = '#c0392b';
+              if (addToCartBtn) addToCartBtn.disabled = trackInventory && !allowBackorder;
+            } else {
+              const urgency = stockNum <= 5 ? 'Low stock' : 'In stock';
+              variantStockMessage.textContent = `${urgency}: ${stockNum} available.`;
+              variantStockMessage.style.color = stockNum <= 5 ? '#d35400' : '#6c757d';
+              if (addToCartBtn) addToCartBtn.disabled = false;
+            }
+          }
+        }
+      }
+
+      if (variantSelect) {
+        variantSelect.addEventListener('change', updateVariantUI);
+        updateVariantUI();
+      }
+
+      function setMinDate() {
+        const today = new Date();
+        const iso = today.toISOString().split('T')[0];
+        pickupDateInput.setAttribute('min', iso);
+        if (!pickupDateInput.value) pickupDateInput.value = prefillDate || iso;
+        if (prefillDate) {
+          pickupDateInput.value = prefillDate;
+          pickupDateInput.readOnly = true;
+          pickupDateInput.style.background = '#f5f3ed';
+          pickupDateInput.style.cursor = 'not-allowed';
+        }
+      }
+
+      async function loadSlots() {
+        slotButtons.innerHTML = '<span style="font-size: 14px; color: #6c757d;">Loading slots...</span>';
+        slotStatus.textContent = '';
+        try {
+          const res = await fetch('/api/available-slots');
+          const data = await res.json();
+          slotButtons.innerHTML = '';
+          if (!data.length) {
+            slotButtons.innerHTML = '<span style="font-size: 14px; color: #6c757d;">No slots available</span>';
+            if (changeSlotBtn) changeSlotBtn.style.display = 'none';
+            return;
+          }
+          data.forEach((slot) => {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.textContent = slot.time;
+            btn.dataset.time = slot.time;
+            btn.style.cssText = 'padding:10px 14px; border-radius:999px; border:1px solid #d4c5a7; background:#fff; cursor:pointer; font-weight:600;';
+            if (prefillTime) {
+              btn.disabled = slot.time !== prefillTime;
+              if (btn.disabled) {
+                btn.style.opacity = '0.45';
+                btn.style.cursor = 'not-allowed';
+              }
+            }
+            btn.addEventListener('click', () => {
+              if (btn.disabled) return;
+              selectSlot(btn, slot.time);
+            });
+            slotButtons.appendChild(btn);
+          });
+
+          if (prefillTime) {
+            const btn = slotButtons.querySelector(`button[data-time="${prefillTime}"]`);
+            if (btn) {
+              selectSlot(btn, prefillTime, true);
+              slotStatus.textContent = `Pickup slot locked: ${prefillDate} at ${prefillTime}`;
+              slotStatus.style.color = '#6c757d';
+            }
+            if (changeSlotBtn) changeSlotBtn.style.display = 'inline-flex';
+          }
+        } catch (err) {
+          slotButtons.innerHTML = '<span style="font-size: 14px; color: #d9534f;">Unable to load slots</span>';
+        }
+      }
+
+      function selectSlot(button, time, skipReset) {
+        if (!skipReset) {
+          slotButtons.querySelectorAll('button').forEach((btn) => {
+            btn.style.background = '#fff';
+            btn.style.color = '#000';
+            btn.style.borderColor = '#d4c5a7';
+          });
+        }
+        button.style.background = '#000';
+        button.style.color = '#fff';
+        button.style.borderColor = '#000';
+        selectedPickupTimeInput.value = time;
+        slotStatus.textContent = `Selected ${pickupDateInput.value} at ${time}`;
+        slotStatus.style.color = '#6c757d';
+      }
+
+      async function savePickupSelection(dateValue, timeValue) {
+        const payload = {
+          pickup_date: dateValue,
+          pickup_time: timeValue
+        };
+        const headers = { 'Content-Type': 'application/json' };
+        if (csrfToken) {
+          headers['X-CSRFToken'] = csrfToken;
+        }
+        const res = await fetch('/api/pickup-selection', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(payload)
+        });
+        const result = await res.json();
+        if (!res.ok) {
+          throw new Error(result.error || 'Unable to save pickup slot');
+        }
+        return result;
+      }
+
+      form?.addEventListener('submit', async (event) => {
+        if (!pickupDateInput || !selectedPickupTimeInput) return;
+        const dateValue = pickupDateInput.value;
+        const timeValue = selectedPickupTimeInput.value;
+        if (!dateValue || !timeValue) {
+          event.preventDefault();
+          slotStatus.textContent = 'Select a pickup date and time before adding to cart.';
+          slotStatus.style.color = '#d9534f';
+          return;
+        }
+        event.preventDefault();
+        slotStatus.textContent = 'Saving pickup slot...';
+        slotStatus.style.color = '#6c757d';
+        try {
+          await savePickupSelection(dateValue, timeValue);
+          form.submit();
+        } catch (err) {
+          slotStatus.textContent = err.message;
+          slotStatus.style.color = '#d9534f';
+        }
+      });
+
+      if (pickupDateInput) {
+        setMinDate();
+        if (prefillTime) {
+          selectedPickupTimeInput.value = prefillTime;
+        }
+        loadSlots();
+      }
+
+      function enableChangeSlot() {
+        if (changeSlotBtn && prefillTime) {
+          changeSlotBtn.style.display = 'inline-flex';
+        }
+      }
+
+      enableChangeSlot();
+
+      async function clearSlotSession() {
+        const headers = { 'Content-Type': 'application/json' };
+        if (csrfToken) headers['X-CSRFToken'] = csrfToken;
+        const res = await fetch('/api/pickup-clear', { method: 'POST', headers });
+        if (!res.ok) {
+          throw new Error('Unable to clear slot');
+        }
+      }
+
+      function unlockSlots() {
+        pickupDateInput.readOnly = false;
+        pickupDateInput.style.background = '#fff';
+        pickupDateInput.style.cursor = 'text';
+        slotButtons.querySelectorAll('button').forEach((btn) => {
+          btn.disabled = false;
+          btn.style.opacity = '1';
+          btn.style.cursor = 'pointer';
+        });
+        selectedPickupTimeInput.value = '';
+        slotStatus.textContent = 'Select a new pickup slot.';
+        slotStatus.style.color = '#6c757d';
+      }
+
+      changeSlotBtn?.addEventListener('click', async () => {
+        changeSlotBtn.disabled = true;
+        changeSlotBtn.textContent = 'Unlocking...';
+        try {
+          await clearSlotSession();
+          unlockSlots();
+          await loadSlots();
+          changeSlotBtn.style.display = 'none';
+        } catch (err) {
+          slotStatus.textContent = err.message;
+          slotStatus.style.color = '#d9534f';
+          changeSlotBtn.disabled = false;
+          changeSlotBtn.textContent = 'Change slot';
+        }
+      });
+
       const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
       if (csrfToken) {
         document.querySelectorAll('form').forEach((form) => {

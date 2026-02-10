@@ -117,6 +117,11 @@
         .btn-danger:hover {
             background: #c82333;
         }
+
+        /* Hide CKEditor version warning overlay */
+        .cke_notification {
+            display: none !important;
+        }
         
         .form-group {
             margin-bottom: 1.5rem;
@@ -200,6 +205,21 @@
         
         .flash.error {
             border-left: 4px solid #dc3545;
+        }
+
+        @media print {
+            .admin-nav,
+            .admin-sidebar,
+            .flash-messages {
+                display: none !important;
+            }
+            body {
+                background: #fff;
+            }
+            .admin-content {
+                margin: 0;
+                padding: 1rem;
+            }
         }
         
         .stats-grid {

@@ -30,12 +30,14 @@
 
     <main style="padding: 80px clamp(20px, 6vw, 90px); min-height: 60vh">
       <div style="max-width: 800px; margin: 0 auto; text-align: center">
+        {% set confirmation_title = settings.confirmation_title if settings and settings.confirmation_title else 'Merci, your order is confirmed.' %}
+        {% set confirmation_subtitle = settings.confirmation_subtitle if settings and settings.confirmation_subtitle else 'We will have everything ready for your chosen collection time. A note has been sent to your inbox.' %}
         <div style="width: 80px; height: 80px; background: linear-gradient(135deg, var(--gold-light), var(--gold)); border-radius: 50%; margin: 0 auto 24px; display: flex; align-items: center; justify-content: center">
           <svg width="40" height="40" fill="white" viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
         </div>
 
-        <h1 style="font-family: 'Playfair Display', serif; font-size: clamp(36px, 5vw, 48px); margin-bottom: 16px">Thank You!</h1>
-        <p style="font-size: 18px; color: #777; margin-bottom: 40px">Your order has been placed successfully.</p>
+        <h1 style="font-family: 'Playfair Display', serif; font-size: clamp(36px, 5vw, 48px); margin-bottom: 16px">{{ confirmation_title }}</h1>
+        <p style="font-size: 18px; color: #777; margin-bottom: 40px">{{ confirmation_subtitle }}</p>
 
         <div class="booking-card" style="text-align: left; margin-bottom: 32px">
           <div style="text-align: center; padding-bottom: 24px; border-bottom: 2px solid var(--gold); margin-bottom: 24px">
@@ -95,11 +97,11 @@
         </div>
 
         <p style="color: #777; margin-bottom: 32px">
-          A confirmation email has been sent to <strong>{{ order.customer_email }}</strong>
+          We've emailed your receipt and pickup details to {{ order.customer_email }}.
         </p>
 
         <a href="{{ url_for('index') }}" class="btn-primary" style="display: inline-block; padding: 12px 32px; text-decoration: none">
-          Back to Home
+          Return to the atelier
         </a>
       </div>
     </main>

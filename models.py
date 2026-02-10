@@ -10,6 +10,15 @@ class User(UserMixin, db.Model):
     password_hash = db.Column(db.String(256), nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
+
+class Customer(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    email = db.Column(db.String(120), unique=True, nullable=False)
+    password_hash = db.Column(db.String(256), nullable=False)
+    name = db.Column(db.String(200))
+    phone = db.Column(db.String(50))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
 class Product(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(200), nullable=False)
@@ -24,6 +33,7 @@ class Product(db.Model):
     track_inventory = db.Column(db.Boolean, default=False)
     stock_quantity = db.Column(db.Integer, default=0)
     allow_backorder = db.Column(db.Boolean, default=False)
+    product_status = db.Column(db.String(20), default='active')  # active, upcoming, hidden
     
     # SEO
     slug = db.Column(db.String(250), unique=True)  # URL-friendly name
@@ -110,6 +120,7 @@ class Order(db.Model):
     payment_method = db.Column(db.String(50))  # stripe, paypal
     payment_status = db.Column(db.String(50), default='pending')  # pending, paid, failed, refunded
     payment_intent_id = db.Column(db.String(200))  # Stripe payment intent ID
+    customer_id = db.Column(db.Integer, db.ForeignKey('customer.id'))  # Optional link to registered customer
     
     # Order status
     status = db.Column(db.String(50), default='pending')  # pending, confirmed, preparing, ready, completed, cancelled
@@ -120,6 +131,7 @@ class Order(db.Model):
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     items = db.relationship('OrderItem', backref='order', lazy=True, cascade='all, delete-orphan')
+    customer = db.relationship('Customer', backref='orders', lazy=True)
 
 class OrderItem(db.Model):
     """Items in an order"""
@@ -154,6 +166,8 @@ class MaisonSection(db.Model):
     title = db.Column(db.Text)  # Rich HTML content
     description = db.Column(db.Text)  # Rich HTML content
     image_url = db.Column(db.String(500))
+    cta_label = db.Column(db.String(200))
+    cta_url = db.Column(db.String(500))
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 class Booking(db.Model):
@@ -226,7 +240,46 @@ class SiteSettings(db.Model):
     # Language settings
     default_language = db.Column(db.String(10), default='en')  # en, fr
     enable_auto_translate = db.Column(db.Boolean, default=True)
+    # Copy blocks
+    booking_heading = db.Column(db.String(200))
+    booking_body = db.Column(db.Text)
+    seasonal_heading = db.Column(db.String(200))
+    seasonal_body = db.Column(db.Text)
+    pickup_card_title = db.Column(db.String(200))
+    pickup_card_note = db.Column(db.Text)
+    confirmation_title = db.Column(db.String(200))
+    confirmation_subtitle = db.Column(db.Text)
+    allow_test_checkout = db.Column(db.Boolean, default=False)
+    # Invoicing
+    company_name = db.Column(db.String(200))
+    company_vat_number = db.Column(db.String(100))
+    company_registration = db.Column(db.String(100))
+    company_invoice_email = db.Column(db.String(120))
+    company_invoice_phone = db.Column(db.String(50))
+    company_invoice_address = db.Column(db.Text)
+    company_bank_name = db.Column(db.String(200))
+    company_bank_account = db.Column(db.String(100))
+    company_sort_code = db.Column(db.String(50))
+    company_iban = db.Column(db.String(100))
+    company_swift = db.Column(db.String(100))
+    invoice_notes = db.Column(db.Text)
+    invoice_template_path = db.Column(db.String(255))
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Maintenance page
+    maintenance_enabled = db.Column(db.Boolean, default=False)
+    maintenance_message = db.Column(db.Text)
+    maintenance_image_url = db.Column(db.String(500))
+    
+    # Entrance animation controls
+    entrance_enabled = db.Column(db.Boolean, default=True)
+    entrance_title = db.Column(db.String(200))
+    entrance_subtitle = db.Column(db.String(200))
+    entrance_description = db.Column(db.Text)
+    entrance_extra_text = db.Column(db.String(200))
+    entrance_logo_url = db.Column(db.String(500))
+    entrance_duration_ms = db.Column(db.Integer, default=2000)
+    entrance_fade_ms = db.Column(db.Integer, default=800)
 
 class NavigationItem(db.Model):
     """Navigation menu items"""

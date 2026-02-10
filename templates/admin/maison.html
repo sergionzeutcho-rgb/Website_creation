@@ -30,6 +30,17 @@
             <img src="{{ maison.image_url }}" class="image-preview" alt="Current maison image">
             {% endif %}
         </div>
+
+        <div class="form-group">
+            <label>CTA Label</label>
+            <input type="text" name="cta_label" value="{{ maison.cta_label if maison else '' }}" placeholder="Discover the atelier">
+        </div>
+
+        <div class="form-group">
+            <label>CTA Link</label>
+            <input type="text" name="cta_url" value="{{ maison.cta_url if maison else '' }}" placeholder="https://example.com/atelier">
+            <small style="color: #6c757d; display: block; margin-top: 4px;">Use a full URL or a relative path (e.g., /atelier). Leave empty to fall back to the homepage anchor.</small>
+        </div>
         
         <button type="submit" class="btn btn-primary">Save Changes</button>
     </form>

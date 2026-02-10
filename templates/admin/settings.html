@@ -37,6 +37,57 @@
             <label>Address</label>
             <textarea name="address">{{ settings.address if settings else '' }}</textarea>
         </div>
+
+        <h2 style="margin-top: 2rem; margin-bottom: 1rem;">Entrance Animation</h2>
+        <p style="color: #6c757d; margin-bottom: 1.5rem;">Control the opening animation shown on page load.</p>
+
+        <div class="form-group" style="display: flex; align-items: center; gap: 0.75rem;">
+            <input type="checkbox" name="entrance_enabled" id="entrance_enabled" {% if settings.entrance_enabled %}checked{% endif %}>
+            <label for="entrance_enabled" style="margin: 0;">Enable entrance animation</label>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1.5rem;">
+            <div class="form-group">
+                <label>Animation title</label>
+                <input type="text" name="entrance_title" value="{{ settings.entrance_title if settings else '' }}" placeholder="Atelier Gourmand">
+            </div>
+            <div class="form-group">
+                <label>Subtitle</label>
+                <input type="text" name="entrance_subtitle" value="{{ settings.entrance_subtitle if settings else '' }}" placeholder="by OC - London">
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label>Description / extra line</label>
+            <textarea name="entrance_description" rows="2" placeholder="Handcrafted patisserie">{{ settings.entrance_description if settings else '' }}</textarea>
+        </div>
+
+        <div class="form-group">
+            <label>Footer text (optional)</label>
+            <input type="text" name="entrance_extra_text" value="{{ settings.entrance_extra_text if settings else '' }}" placeholder="Curated seasonal collections">
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1.5rem;">
+            <div class="form-group">
+                <label>Show duration (ms)</label>
+                <input type="number" name="entrance_duration_ms" min="500" max="8000" step="100" value="{{ settings.entrance_duration_ms if settings and settings.entrance_duration_ms is not none else 2000 }}">
+                <small style="display: block; color: #6c757d; margin-top: 0.5rem;">How long the intro stays before fading out.</small>
+            </div>
+            <div class="form-group">
+                <label>Fade duration (ms)</label>
+                <input type="number" name="entrance_fade_ms" min="200" max="4000" step="100" value="{{ settings.entrance_fade_ms if settings and settings.entrance_fade_ms is not none else 800 }}">
+                <small style="display: block; color: #6c757d; margin-top: 0.5rem;">Controls the speed of the fade-out.</small>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label>Entrance Logo (optional)</label>
+            <input type="file" name="entrance_logo" accept="image/*">
+            {% if settings and settings.entrance_logo_url %}
+            <img src="{{ settings.entrance_logo_url }}" class="image-preview" alt="Entrance logo" style="max-width: 200px;">
+            {% endif %}
+            <small style="display: block; color: #6c757d; margin-top: 0.5rem;">Shown above the intro text. Falls back to the main logo if not provided.</small>
+        </div>
         
         <h2 style="margin-top: 2rem; margin-bottom: 1rem;">Social Media</h2>
         <p style="color: #6c757d; margin-bottom: 1.5rem;">Enter your full profile URLs (e.g., https://instagram.com/yourhandle)</p>
@@ -79,6 +130,138 @@
         <div class="form-group">
             <label>PayPal Client ID</label>
             <input type="text" name="paypal_client_id" value="{{ settings.paypal_client_id if settings else '' }}" placeholder="Your PayPal client ID">
+        </div>
+
+        <div class="form-group" style="display: flex; align-items: center; gap: 0.75rem; margin-top: 1rem;">
+            <input type="checkbox" name="allow_test_checkout" id="allow_test_checkout" {% if settings and settings.allow_test_checkout %}checked{% endif %}>
+            <label for="allow_test_checkout" style="margin: 0;">Enable test checkout button (no payment)</label>
+            <small style="color: #6c757d;">QA only: creates a paid order without taking payment.</small>
+        </div>
+
+        <h2 style="margin-top: 2rem; margin-bottom: 1rem;">Copy & Messaging</h2>
+        <p style="color: #6c757d; margin-bottom: 1.5rem;">Update page copy blocks shown on the main site and confirmation page.</p>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1.5rem;">
+            <div class="form-group">
+                <label>Booking heading</label>
+                <input type="text" name="booking_heading" value="{{ settings.booking_heading if settings else '' }}" placeholder="I will collect my order on">
+            </div>
+            <div class="form-group">
+                <label>Seasonal heading</label>
+                <input type="text" name="seasonal_heading" value="{{ settings.seasonal_heading if settings else '' }}" placeholder="Delicate structures, bold fruits.">
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label>Booking body</label>
+            <textarea name="booking_body" rows="3" placeholder="Reserve your pickup slot and we'll hold it while you complete checkout.">{{ settings.booking_body if settings else '' }}</textarea>
+        </div>
+
+        <div class="form-group">
+            <label>Seasonal body</label>
+            <textarea name="seasonal_body" rows="3" placeholder="A rotating selection of tarts, entremets, and petits gateaux inspired by the season.">{{ settings.seasonal_body if settings else '' }}</textarea>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1.5rem;">
+            <div class="form-group">
+                <label>Pickup card title</label>
+                <input type="text" name="pickup_card_title" value="{{ settings.pickup_card_title if settings else '' }}" placeholder="Pickup at the atelier">
+            </div>
+            <div class="form-group">
+                <label>Confirmation title</label>
+                <input type="text" name="confirmation_title" value="{{ settings.confirmation_title if settings else '' }}" placeholder="Merci, your order is confirmed.">
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label>Pickup card note</label>
+            <textarea name="pickup_card_note" rows="3" placeholder="We'll hold your slot for 20 minutes while you check out.">{{ settings.pickup_card_note if settings else '' }}</textarea>
+        </div>
+
+        <div class="form-group">
+            <label>Confirmation subtitle</label>
+            <textarea name="confirmation_subtitle" rows="3" placeholder="We'll prepare everything for your chosen collection time.">{{ settings.confirmation_subtitle if settings else '' }}</textarea>
+        </div>
+
+        <h2 style="margin-top: 2rem; margin-bottom: 1rem;">Invoicing</h2>
+        <p style="color: #6c757d; margin-bottom: 1.5rem;">Details used on invoices/receipts and billing emails.</p>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1.5rem;">
+            <div class="form-group">
+                <label>Company name</label>
+                <input type="text" name="company_name" value="{{ settings.company_name if settings else '' }}" placeholder="Atelier Gourmand by OC Limited">
+            </div>
+            <div class="form-group">
+                <label>VAT number</label>
+                <input type="text" name="company_vat_number" value="{{ settings.company_vat_number if settings else '' }}" placeholder="GB123456789">
+            </div>
+            <div class="form-group">
+                <label>Company registration</label>
+                <input type="text" name="company_registration" value="{{ settings.company_registration if settings else '' }}" placeholder="12345678">
+            </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1.5rem;">
+            <div class="form-group">
+                <label>Billing email</label>
+                <input type="email" name="company_invoice_email" value="{{ settings.company_invoice_email if settings else '' }}" placeholder="accounts@ateliergourmand.co.uk">
+            </div>
+            <div class="form-group">
+                <label>Billing phone</label>
+                <input type="text" name="company_invoice_phone" value="{{ settings.company_invoice_phone if settings else '' }}" placeholder="+44 20 1234 5678">
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label>Billing address</label>
+            <textarea name="company_invoice_address" rows="3" placeholder="Street, City, Postcode">{{ settings.company_invoice_address if settings else '' }}</textarea>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1.5rem;">
+            <div class="form-group">
+                <label>Bank name</label>
+                <input type="text" name="company_bank_name" value="{{ settings.company_bank_name if settings else '' }}" placeholder="Barclays">
+            </div>
+            <div class="form-group">
+                <label>Account number / IBAN</label>
+                <input type="text" name="company_bank_account" value="{{ settings.company_bank_account if settings else '' }}" placeholder="12345678">
+            </div>
+            <div class="form-group">
+                <label>Sort code</label>
+                <input type="text" name="company_sort_code" value="{{ settings.company_sort_code if settings else '' }}" placeholder="20-50-50">
+            </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1.5rem;">
+            <div class="form-group">
+                <label>IBAN</label>
+                <input type="text" name="company_iban" value="{{ settings.company_iban if settings else '' }}" placeholder="GB00 BARC 0000 0000 0000 00">
+            </div>
+            <div class="form-group">
+                <label>SWIFT / BIC</label>
+                <input type="text" name="company_swift" value="{{ settings.company_swift if settings else '' }}" placeholder="BARCGB22">
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label>Invoice notes / footer</label>
+            <textarea name="invoice_notes" rows="3" placeholder="Thank you for your order. Please contact accounts within 7 days for any queries.">{{ settings.invoice_notes if settings else '' }}</textarea>
+        </div>
+
+        <div class="form-group">
+            <label>Invoice template (HTML)</label>
+            <input type="file" name="invoice_template" accept=".html,.htm">
+            {% if settings and settings.invoice_template_path %}
+            <div style="margin-top: 0.5rem; color: #6c757d; display: flex; align-items: center; gap: 0.75rem;">
+                <a href="{{ settings.invoice_template_path }}" target="_blank" style="color: #c5a572;">View current template</a>
+                <label style="display: inline-flex; align-items: center; gap: 0.35rem; cursor: pointer;">
+                    <input type="checkbox" name="remove_invoice_template"> Remove custom template
+                </label>
+            </div>
+            <small style="display: block; color: #6c757d; margin-top: 0.25rem;">Upload a custom invoice layout (HTML). Jinja tags can use order, settings, currency_symbol, invoice_number, invoice_date.</small>
+            {% else %}
+            <small style="display: block; color: #6c757d; margin-top: 0.25rem;">Optional. Upload an HTML layout to override the default invoice design.</small>
+            {% endif %}
         </div>
         
         <h2 style="margin-top: 2rem; margin-bottom: 1rem;">Chat & Communication</h2>

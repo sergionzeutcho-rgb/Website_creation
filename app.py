@@ -5,7 +5,7 @@ import stripe
 import smtplib
 from email.message import EmailMessage
 from urllib.parse import urlparse
-from flask import Flask, render_template, request, jsonify, redirect, url_for, flash, send_from_directory, session
+from flask import Flask, render_template, render_template_string, request, jsonify, redirect, url_for, flash, send_from_directory, session
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 from flask_ckeditor import CKEditor
 from flask_limiter import Limiter
@@ -88,6 +88,56 @@ def build_order_confirmation_html(order):
         currency_symbol=currency_symbol,
     )
 
+
+def build_invoice_html(order):
+    settings = SiteSettings.query.first()
+    currency_symbol = CURRENCY_SYMBOLS.get(order.currency or app.config['DEFAULT_CURRENCY'], '£')
+    invoice_number = order.order_number
+    invoice_date = order.created_at.date()
+    return render_invoice_template(order, settings, currency_symbol, invoice_number, invoice_date, for_email=True)
+
+
+def build_order_number(settings=None):
+    prefix = os.getenv('ORDER_PREFIX', 'ORD').strip() or 'ORD'
+    date_fmt = os.getenv('ORDER_DATE_FMT', '%Y%m%d').strip() or '%Y%m%d'
+    separator = os.getenv('ORDER_SEPARATOR', '-').strip() or '-'
+    pad = int(os.getenv('ORDER_SEQ_PAD', '3') or 3)
+
+    today = datetime.utcnow().date()
+    start = datetime.combine(today, datetime.min.time())
+    end = datetime.combine(today, datetime.max.time())
+    daily_count = Order.query.filter(Order.created_at >= start, Order.created_at <= end).count() + 1
+
+    date_part = datetime.utcnow().strftime(date_fmt)
+    seq_part = str(daily_count).zfill(pad)
+    return f"{prefix}{separator}{date_part}{separator}{seq_part}"
+
+
+def render_invoice_template(order, settings, currency_symbol, invoice_number, invoice_date, for_email=False):
+    template_html = None
+    if settings and settings.invoice_template_path:
+        fs_path = os.path.join(app.root_path, settings.invoice_template_path.lstrip('/'))
+        if os.path.exists(fs_path):
+            with open(fs_path, 'r', encoding='utf-8') as f:
+                template_html = f.read()
+
+    context = {
+        'order': order,
+        'settings': settings,
+        'currency_symbol': currency_symbol,
+        'invoice_number': invoice_number,
+        'invoice_date': invoice_date,
+    }
+
+    if template_html:
+        # Allow custom uploaded template with same context as defaults
+        return render_template_string(template_html, **context)
+
+    return render_template(
+        'emails/invoice.html' if for_email else 'admin/order_invoice.html',
+        **context,
+    )
+
 app = Flask(__name__)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 
@@ -139,6 +189,7 @@ app.config['SMTP_FROM'] = os.getenv('SMTP_FROM')
 
 # Allowed extensions for uploads
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp', 'mp4', 'mov', 'avi'}
+TEMPLATE_EXTENSIONS = {'html', 'htm'}
 
 CURRENCY_SYMBOLS = {
     'GBP': '£',
@@ -163,7 +214,7 @@ COUNTRY_TO_CURRENCY = {
 }
 
 # Import db from models and initialize with app
-from models import (db, User, Product, ProductVariant, ProductImage, HeroSection, MaisonSection, 
+from models import (db, User, Customer, Product, ProductVariant, ProductImage, HeroSection, MaisonSection, 
                     Booking, SiteSettings, AvailableTimeSlot, BlockedDate, BlockedTimeSlot, BookingSettings,
                     Cart, CartItem, Order, OrderItem, NavigationItem, Discount, DeliveryZone)
 
@@ -181,9 +232,14 @@ os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 os.makedirs(os.path.join(app.config['UPLOAD_FOLDER'], 'products'), exist_ok=True)
 os.makedirs(os.path.join(app.config['UPLOAD_FOLDER'], 'hero'), exist_ok=True)
 os.makedirs(os.path.join(app.config['UPLOAD_FOLDER'], 'maison'), exist_ok=True)
+os.makedirs(os.path.join(app.config['UPLOAD_FOLDER'], 'invoices'), exist_ok=True)
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+
+def allowed_template_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in TEMPLATE_EXTENSIONS
 
 def build_base_url():
     if app.config['PAYMENT_BASE_URL']:
@@ -232,6 +288,13 @@ def get_currency_rate(base_currency, target_currency):
 
 def convert_amount(amount, rate):
     return round(amount * rate, 2)
+
+
+def get_current_customer():
+    customer_id = session.get('customer_id')
+    if not customer_id:
+        return None
+    return Customer.query.get(customer_id)
 
 def get_paypal_environment():
     mode = app.config['PAYPAL_MODE'].lower()
@@ -318,11 +381,12 @@ def is_safe_next(next_url):
 def inject_cart_count():
     """Make cart count available in all templates"""
     cart_count = 0
+    current_customer = get_current_customer()
     if 'cart_id' in session:
         cart = Cart.query.get(session['cart_id'])
         if cart:
             cart_count = sum(item.quantity for item in cart.items)
-    return {'cart_count': cart_count}
+    return {'cart_count': cart_count, 'current_customer': current_customer}
 
 @login_manager.user_loader
 def load_user(user_id):
@@ -371,7 +435,17 @@ def index():
     nav_items = NavigationItem.query.filter_by(is_active=True).order_by(NavigationItem.order).all()
     order_currency = get_order_currency()
     currency_symbol = CURRENCY_SYMBOLS.get(order_currency, order_currency + ' ')
-    return render_template('index.html', hero=hero, products=products, maison=maison, settings=settings, nav_items=nav_items, currency_symbol=currency_symbol)
+    entrance_config = {
+        'enabled': settings.entrance_enabled if settings and settings.entrance_enabled is not None else True,
+        'title': (settings.entrance_title if settings and settings.entrance_title else (settings.site_title if settings and settings.site_title else 'Atelier Gourmand')),
+        'subtitle': (settings.entrance_subtitle if settings and settings.entrance_subtitle else 'by OC - London'),
+        'description': (settings.entrance_description if settings and settings.entrance_description else 'Handcrafted patisserie'),
+        'extra_text': settings.entrance_extra_text if settings else None,
+        'logo_url': (settings.entrance_logo_url or settings.logo_url) if settings else None,
+        'duration_ms': settings.entrance_duration_ms if settings and settings.entrance_duration_ms else 2000,
+        'fade_ms': settings.entrance_fade_ms if settings and settings.entrance_fade_ms else 800,
+    }
+    return render_template('index.html', hero=hero, products=products, maison=maison, settings=settings, nav_items=nav_items, currency_symbol=currency_symbol, entrance_config=entrance_config)
 
 @app.route('/api/products')
 def api_products():
@@ -499,6 +573,74 @@ def api_available_slots():
     slots = AvailableTimeSlot.query.filter_by(is_active=True).order_by(AvailableTimeSlot.time_slot).all()
     return jsonify([{'time': slot.time_slot} for slot in slots])
 
+
+@csrf.exempt
+@app.route('/api/pickup-selection', methods=['POST'])
+def api_pickup_selection():
+    data = request.get_json(silent=True) or {}
+    pickup_date_str = data.get('pickup_date')
+    pickup_time = data.get('pickup_time')
+
+    if not pickup_date_str or not pickup_time:
+        return jsonify({'error': 'Pickup date and time are required'}), 400
+
+    try:
+        pickup_date = datetime.fromisoformat(pickup_date_str).date()
+    except Exception:
+        return jsonify({'error': 'Invalid pickup date'}), 400
+
+    settings = BookingSettings.query.first()
+    if settings and not settings.booking_enabled:
+        return jsonify({'error': 'Bookings are currently disabled'}), 400
+
+    if BlockedDate.query.filter_by(date=pickup_date).first():
+        return jsonify({'error': 'Selected date is not available'}), 400
+
+    if BlockedTimeSlot.query.filter_by(date=pickup_date, time_slot=pickup_time).first():
+        return jsonify({'error': 'Selected time slot is not available'}), 400
+
+    if settings:
+        existing = Booking.query.filter_by(
+            pickup_date=pickup_date,
+            pickup_time=pickup_time,
+            status='confirmed'
+        ).count()
+        if existing >= settings.max_bookings_per_slot:
+            return jsonify({'error': 'This time slot is fully booked'}), 400
+
+    current_customer = get_current_customer()
+    email = data.get('email') or session.get('booking_email') or (current_customer.email if current_customer else None)
+    phone = data.get('phone') or session.get('booking_phone') or (current_customer.phone if current_customer else None)
+
+    session['pickup_confirmed'] = True
+    session['pickup_date'] = pickup_date.isoformat()
+    session['pickup_time'] = pickup_time
+    if email:
+        session['booking_email'] = email
+    if phone:
+        session['booking_phone'] = phone
+    session.modified = True
+
+    return jsonify({'message': 'Pickup slot saved', 'pickup_date': session['pickup_date'], 'pickup_time': pickup_time})
+
+
+@csrf.exempt
+@app.route('/api/pickup-clear', methods=['POST'])
+def api_pickup_clear():
+    session.pop('pickup_confirmed', None)
+    session.pop('pickup_date', None)
+    session.pop('pickup_time', None)
+        product = Product.query.get_or_404(product_id)
+        if product.product_status == 'hidden' or not product.is_active:
+            flash('This product is not available.', 'error')
+            return redirect(request.referrer or url_for('index'))
+        if product.product_status == 'upcoming':
+            flash('This product is coming soon.', 'error')
+            return redirect(request.referrer or url_for('index'))
+    session.pop('booking_phone', None)
+    session.modified = True
+    return jsonify({'message': 'Pickup slot cleared'}), 200
+
 # E-commerce routes
 @app.route('/product/<slug>')
 def product_detail(slug):
@@ -510,7 +652,18 @@ def product_detail(slug):
     settings = SiteSettings.query.first()
     order_currency = get_order_currency()
     currency_symbol = CURRENCY_SYMBOLS.get(order_currency, order_currency + ' ')
-    return render_template('product_detail.html', product=product, settings=settings, currency_symbol=currency_symbol)
+    prefill_pickup_date = session.get('pickup_date')
+    prefill_pickup_time = session.get('pickup_time')
+    pickup_confirmed = session.get('pickup_confirmed', False)
+    return render_template(
+        'product_detail.html',
+        product=product,
+        settings=settings,
+        currency_symbol=currency_symbol,
+        prefill_pickup_date=prefill_pickup_date,
+        prefill_pickup_time=prefill_pickup_time,
+        pickup_confirmed=pickup_confirmed
+    )
 
 @app.route('/cart')
 def view_cart():
@@ -526,13 +679,19 @@ def view_cart():
         fx_rate = 1.0
     display_subtotal = convert_amount(subtotal, fx_rate)
     currency_symbol = CURRENCY_SYMBOLS.get(order_currency, order_currency + ' ')
+    pickup_confirmed = session.get('pickup_confirmed')
+    pickup_date = session.get('pickup_date')
+    pickup_time = session.get('pickup_time')
     return render_template(
         'cart.html',
         cart=cart,
         subtotal=subtotal,
         display_subtotal=display_subtotal,
         currency_symbol=currency_symbol,
-        settings=settings
+        settings=settings,
+        pickup_confirmed=pickup_confirmed,
+        pickup_date=pickup_date,
+        pickup_time=pickup_time,
     )
 
 @app.route('/cart/add', methods=['POST'])
@@ -545,6 +704,13 @@ def add_to_cart():
         
         product = Product.query.get_or_404(product_id)
         variant = ProductVariant.query.get(variant_id) if variant_id else None
+
+        if product.product_status == 'hidden' or not product.is_active:
+            flash('This product is not available.', 'error')
+            return redirect(request.referrer or url_for('index'))
+        if product.product_status == 'upcoming':
+            flash('This product is coming soon.', 'error')
+            return redirect(request.referrer or url_for('index'))
         
         price = product.price
         if variant and variant.price_modifier:
@@ -557,6 +723,15 @@ def add_to_cart():
             product_id=product_id,
             variant_id=variant_id
         ).first()
+
+        if product.track_inventory and not product.allow_backorder:
+            desired_quantity = quantity + (existing_item.quantity if existing_item else 0)
+            available = product.stock_quantity
+            if variant and variant.stock_quantity is not None:
+                available = variant.stock_quantity if available is None else min(available, variant.stock_quantity)
+            if available is not None and desired_quantity > available:
+                flash('Not enough stock available.', 'error')
+                return redirect(request.referrer or url_for('product_detail', slug=product.slug or product.id))
         
         if existing_item:
             existing_item.quantity += quantity
@@ -621,20 +796,15 @@ def remove_from_cart(item_id):
 def checkout():
     """Checkout page"""
     cart = get_or_create_cart()
+    current_customer = get_current_customer()
     
     if not cart.items:
         flash('Your cart is empty!', 'warning')
         return redirect(url_for('index'))
 
+    # Allow choosing/booking a slot directly on checkout if none was picked earlier
     if request.method == 'POST':
         fulfillment_method = request.form.get('fulfillment_method', 'pickup')
-        if fulfillment_method != 'delivery' and not session.get('pickup_confirmed'):
-            flash('Please confirm your pickup slot before checkout.', 'error')
-            return redirect(url_for('index') + '#booking')
-    else:
-        if not session.get('pickup_confirmed'):
-            flash('Please confirm your pickup slot before checkout.', 'error')
-            return redirect(url_for('index') + '#booking')
     
     order_currency = get_order_currency()
     base_currency = app.config['BASE_CURRENCY']
@@ -648,42 +818,88 @@ def checkout():
     stripe_secret_key = app.config['STRIPE_SECRET_KEY'] or (settings.stripe_secret_key if settings else None)
     paypal_client_id = app.config['PAYPAL_CLIENT_ID'] or (settings.paypal_client_id if settings else None)
     paypal_client_secret = app.config['PAYPAL_CLIENT_SECRET']
+    allow_test_checkout = bool(settings.allow_test_checkout) if settings else False
 
     available_payment_methods = []
     if stripe_public_key and stripe_secret_key:
         available_payment_methods.append('stripe')
     if paypal_client_id and paypal_client_secret:
         available_payment_methods.append('paypal')
-    if not available_payment_methods:
+    if not available_payment_methods and not allow_test_checkout:
+        # Fallback to test checkout when live gateways are missing
+        allow_test_checkout = True
+    if not available_payment_methods and not allow_test_checkout:
         flash('Online card payments are not configured yet.', 'error')
         return redirect(url_for('view_cart'))
 
     if request.method == 'POST':
         try:
-            customer_name = request.form.get('name')
-            customer_email = request.form.get('email')
-            customer_phone = request.form.get('phone')
+            customer_name = (request.form.get('name') or (current_customer.name if current_customer else None))
+            customer_email = (request.form.get('email') or '').strip().lower()
+            customer_phone = request.form.get('phone') or (current_customer.phone if current_customer else None)
             pickup_date_str = request.form.get('pickup_date') or session.get('pickup_date')
             pickup_time = request.form.get('pickup_time') or session.get('pickup_time')
             notes = request.form.get('notes')
-            payment_method = request.form.get('payment_method') or available_payment_methods[0]
+            payment_method = request.form.get('payment_method')
+            is_test_checkout = request.form.get('test_checkout') == '1'
+            account_choice = request.form.get('account_choice', 'guest')
+            account_password = request.form.get('account_password') or ''
+            account_password_confirm = request.form.get('account_password_confirm') or ''
+            new_customer = None
+
+            if is_test_checkout and allow_test_checkout:
+                payment_method = 'test'
+            if not payment_method:
+                if available_payment_methods:
+                    payment_method = available_payment_methods[0]
+                elif allow_test_checkout:
+                    payment_method = 'test'
 
             if not pickup_date_str or not pickup_time:
                 flash('Pickup date and time are required.', 'error')
                 return redirect(url_for('checkout'))
 
-            if session.get('pickup_confirmed'):
-                if pickup_date_str != session.get('pickup_date') or pickup_time != session.get('pickup_time'):
-                    flash('Pickup slot must match the confirmed booking.', 'error')
-                    return redirect(url_for('checkout'))
-
             pickup_date = datetime.strptime(pickup_date_str, '%Y-%m-%d').date()
+
+            if current_customer:
+                account_choice = 'existing'
+                customer_email = current_customer.email
+                if not customer_name:
+                    customer_name = current_customer.name
+                if not customer_phone and current_customer.phone:
+                    customer_phone = current_customer.phone
+
+            if account_choice == 'create' and not current_customer:
+                if not customer_email or not account_password:
+                    flash('To create an account, please add your email and a password.', 'error')
+                    return redirect(url_for('checkout'))
+                if len(account_password) < 8:
+                    flash('Password must be at least 8 characters.', 'error')
+                    return redirect(url_for('checkout'))
+                if account_password != account_password_confirm:
+                    flash('Passwords do not match.', 'error')
+                    return redirect(url_for('checkout'))
+                existing = Customer.query.filter_by(email=customer_email).first()
+                if existing:
+                    flash('An account with this email already exists. Please sign in.', 'error')
+                    return redirect(url_for('customer_login', next=url_for('checkout')))
+                new_customer = Customer(
+                    name=customer_name,
+                    email=customer_email,
+                    phone=customer_phone or None,
+                    password_hash=generate_password_hash(account_password)
+                )
+                db.session.add(new_customer)
+                db.session.flush()
+                session['customer_id'] = new_customer.id
+                session.modified = True
+                current_customer = new_customer
 
             if not customer_name or not customer_email:
                 flash('Name and email are required.', 'error')
                 return redirect(url_for('checkout'))
 
-            if payment_method not in available_payment_methods:
+            if payment_method not in available_payment_methods and not (payment_method == 'test' and allow_test_checkout):
                 flash('Selected payment method is unavailable.', 'error')
                 return redirect(url_for('checkout'))
 
@@ -701,7 +917,7 @@ def checkout():
             display_tax = convert_amount(tax, fx_rate)
             display_total = convert_amount(total, fx_rate)
             
-            order_number = f"ORD-{datetime.now().strftime('%Y%m%d')}-{uuid.uuid4().hex[:8].upper()}"
+            order_number = build_order_number(settings)
             
             order = Order(
                 order_number=order_number,
@@ -718,7 +934,8 @@ def checkout():
                 payment_method=payment_method,
                 payment_status='pending',
                 status='pending',
-                notes=notes
+                notes=notes,
+                customer_id=current_customer.id if current_customer else None
             )
             db.session.add(order)
             db.session.flush()
@@ -736,6 +953,29 @@ def checkout():
                 )
                 db.session.add(order_item)
             
+            if payment_method == 'test' and allow_test_checkout:
+                order.payment_status = 'paid'
+                order.status = 'confirmed'
+                db.session.commit()
+                for item in cart.items:
+                    db.session.delete(item)
+                db.session.commit()
+                session.pop('cart_id', None)
+                try:
+                    body = build_order_confirmation_body(order)
+                    html_body = build_order_confirmation_html(order)
+                    send_email(
+                        order.customer_email,
+                        f'Order confirmation {order.order_number}',
+                        body,
+                        from_email=app.config.get('SMTP_FROM') or order.customer_email,
+                        html_body=html_body,
+                    )
+                except Exception:
+                    pass
+                flash(f'Order {order_number} placed (test mode).', 'success')
+                return redirect(url_for('order_confirmation', order_number=order_number))
+
             if payment_method == 'stripe':
                 stripe.api_key = stripe_secret_key
                 success_url = f"{build_base_url()}{app.config['PAYMENT_SUCCESS_PATH']}?order_number={order_number}"
@@ -846,6 +1086,11 @@ def checkout():
     prefill_pickup_time = session.get('pickup_time')
     prefill_email = session.get('booking_email')
     prefill_phone = session.get('booking_phone')
+    prefill_name = current_customer.name if current_customer else None
+
+    if current_customer:
+        prefill_email = prefill_email or current_customer.email
+        prefill_phone = prefill_phone or current_customer.phone
     
     return render_template('checkout.html', 
                          cart=cart, 
@@ -862,11 +1107,13 @@ def checkout():
                          time_slots=time_slots,
                          prefill_pickup_date=prefill_pickup_date,
                          prefill_pickup_time=prefill_pickup_time,
+                         prefill_name=prefill_name,
                          prefill_email=prefill_email,
                          prefill_phone=prefill_phone,
                          stripe_available='stripe' in available_payment_methods,
                          paypal_available='paypal' in available_payment_methods,
-                         available_payment_methods=available_payment_methods)
+                         available_payment_methods=available_payment_methods,
+                         allow_test_checkout=allow_test_checkout)
 
 @app.route('/order/<order_number>')
 def order_confirmation(order_number):
@@ -966,6 +1213,79 @@ def paypal_webhook():
         db.session.commit()
 
     return jsonify({'status': 'ok'})
+
+
+@app.route('/account/login', methods=['GET', 'POST'])
+def customer_login():
+    next_url = request.args.get('next') or request.form.get('next') or url_for('index')
+
+    if get_current_customer():
+        return redirect(next_url if is_safe_next(next_url) else url_for('index'))
+
+    if request.method == 'POST':
+        email = (request.form.get('email') or '').strip().lower()
+        password = request.form.get('password') or ''
+        customer = Customer.query.filter_by(email=email).first()
+
+        if customer and check_password_hash(customer.password_hash, password):
+            session['customer_id'] = customer.id
+            session.modified = True
+            flash('Signed in successfully.', 'success')
+            return redirect(next_url if is_safe_next(next_url) else url_for('checkout'))
+
+        flash('Invalid email or password.', 'error')
+
+    settings = SiteSettings.query.first()
+    return render_template('account_login.html', next=next_url, settings=settings)
+
+
+@app.route('/account/register', methods=['GET', 'POST'])
+def customer_register():
+    next_url = request.args.get('next') or request.form.get('next') or url_for('checkout')
+
+    if get_current_customer():
+        return redirect(next_url if is_safe_next(next_url) else url_for('index'))
+
+    if request.method == 'POST':
+        name = (request.form.get('name') or '').strip()
+        email = (request.form.get('email') or '').strip().lower()
+        phone = (request.form.get('phone') or '').strip()
+        password = request.form.get('password') or ''
+        confirm_password = request.form.get('confirm_password') or ''
+
+        if not name or not email or not password:
+            flash('Name, email, and password are required.', 'error')
+        elif password != confirm_password:
+            flash('Passwords do not match.', 'error')
+        elif len(password) < 8:
+            flash('Password must be at least 8 characters.', 'error')
+        elif Customer.query.filter_by(email=email).first():
+            flash('An account with this email already exists.', 'error')
+        else:
+            customer = Customer(
+                name=name,
+                email=email,
+                phone=phone or None,
+                password_hash=generate_password_hash(password)
+            )
+            db.session.add(customer)
+            db.session.commit()
+            session['customer_id'] = customer.id
+            session.modified = True
+            flash('Account created. You are now signed in.', 'success')
+            return redirect(next_url if is_safe_next(next_url) else url_for('checkout'))
+
+    settings = SiteSettings.query.first()
+    return render_template('account_register.html', next=next_url, settings=settings)
+
+
+@app.route('/account/logout', methods=['POST'])
+def customer_logout():
+    next_url = request.form.get('next') or url_for('index')
+    session.pop('customer_id', None)
+    session.modified = True
+    flash('Signed out.', 'success')
+    return redirect(next_url if is_safe_next(next_url) else url_for('index'))
 
 # Admin routes
 @limiter.limit('5 per minute')
@@ -1207,6 +1527,8 @@ def admin_maison():
         
         maison.title = request.form['title']
         maison.description = request.form['description']
+        maison.cta_label = request.form.get('cta_label') or None
+        maison.cta_url = request.form.get('cta_url') or None
         
         db.session.commit()
         flash('Maison section updated successfully', 'success')
@@ -1233,6 +1555,77 @@ def admin_booking_status(id):
     booking.status = request.form['status']
     db.session.commit()
     flash('Booking status updated', 'success')
+    return redirect(url_for('admin_bookings'))
+
+@app.route('/admin/bookings/<int:id>/delete', methods=['POST'])
+@login_required
+def admin_booking_delete(id):
+    booking = Booking.query.get_or_404(id)
+    db.session.delete(booking)
+    db.session.commit()
+    flash('Booking deleted', 'success')
+    return redirect(url_for('admin_bookings'))
+
+@app.route('/admin/bookings/<int:id>/rebook', methods=['POST'])
+@login_required
+def admin_booking_rebook(id):
+    booking = Booking.query.get_or_404(id)
+    new_date = request.form.get('pickup_date')
+    new_time = request.form.get('pickup_time')
+    message = request.form.get('message')
+
+    if not new_date or not new_time:
+        flash('Pickup date and time are required to rebook.', 'error')
+        return redirect(url_for('admin_bookings'))
+
+    try:
+        booking.pickup_date = datetime.strptime(new_date, '%Y-%m-%d').date()
+    except ValueError:
+        flash('Invalid date format.', 'error')
+        return redirect(url_for('admin_bookings'))
+
+    booking.pickup_time = new_time
+    booking.status = 'confirmed'
+    db.session.commit()
+
+    if booking.email:
+        subject = f'Updated pickup slot for {booking.pickup_date} at {booking.pickup_time}'
+        body = message or (
+            'Your pickup slot has been updated.\n\n'
+            f'Date: {booking.pickup_date}\n'
+            f'Time: {booking.pickup_time}\n\n'
+            'If this change does not work for you, please reply to this email.'
+        )
+        try:
+            settings = SiteSettings.query.first()
+            from_email = app.config.get('SMTP_FROM') or (settings.contact_email if settings else None)
+            send_email(booking.email, subject, body, from_email=from_email)
+        except Exception:
+            flash('Booking updated, but email could not be sent.', 'error')
+            return redirect(url_for('admin_bookings'))
+
+    flash('Booking rebooked and email sent.' if booking.email else 'Booking rebooked.', 'success')
+    return redirect(url_for('admin_bookings'))
+
+@app.route('/admin/bookings/<int:id>/email', methods=['POST'])
+@login_required
+def admin_booking_email(id):
+    booking = Booking.query.get_or_404(id)
+    subject = request.form.get('subject') or 'Update to your pickup booking'
+    body = request.form.get('message')
+    if not booking.email:
+        flash('No email on file for this booking.', 'error')
+        return redirect(url_for('admin_bookings'))
+    if not body:
+        flash('Message body is required.', 'error')
+        return redirect(url_for('admin_bookings'))
+    try:
+        settings = SiteSettings.query.first()
+        from_email = app.config.get('SMTP_FROM') or (settings.contact_email if settings else None)
+        send_email(booking.email, subject, body, from_email=from_email)
+        flash('Email sent to client.', 'success')
+    except Exception:
+        flash('Unable to send email.', 'error')
     return redirect(url_for('admin_bookings'))
 
 @app.route('/admin/availability')
@@ -1582,10 +1975,33 @@ def admin_settings():
                 filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
                 file.save(filepath)
                 settings.logo_url = f'/static/uploads/{filename}'
+
+        # Upload entrance logo if provided
+        if 'entrance_logo' in request.files:
+            file = request.files['entrance_logo']
+            if file and allowed_file(file.filename):
+                filename = secure_filename(file.filename)
+                filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+                file.save(filepath)
+                settings.entrance_logo_url = f'/static/uploads/{filename}'
+
+        # Upload custom invoice template (HTML) if provided
+        if 'invoice_template' in request.files:
+            file = request.files['invoice_template']
+            if file and allowed_template_file(file.filename):
+                filename = secure_filename(file.filename)
+                filename = f'invoice_{filename}'
+                filepath = os.path.join(app.config['UPLOAD_FOLDER'], 'invoices', filename)
+                file.save(filepath)
+                settings.invoice_template_path = f'/static/uploads/invoices/{filename}'
+
+        # Remove custom invoice template if requested
+        if request.form.get('remove_invoice_template') == 'on':
+            settings.invoice_template_path = None
         
         # Basic settings
-        settings.site_title = request.form['site_title']
-        settings.contact_email = request.form['contact_email']
+        settings.site_title = request.form.get('site_title')
+        settings.contact_email = request.form.get('contact_email')
         settings.phone = request.form.get('phone')
         settings.address = request.form.get('address')
         
@@ -1599,11 +2015,45 @@ def admin_settings():
         settings.stripe_public_key = request.form.get('stripe_public_key')
         settings.stripe_secret_key = request.form.get('stripe_secret_key')
         settings.paypal_client_id = request.form.get('paypal_client_id')
+        settings.allow_test_checkout = request.form.get('allow_test_checkout') == 'on'
         
         # Chat integrations
         settings.whatsapp_number = request.form.get('whatsapp_number')
         settings.chatway_widget = request.form.get('chatway_widget')
         settings.custom_chat_widget = request.form.get('custom_chat_widget')
+
+        # Copy blocks
+        settings.booking_heading = request.form.get('booking_heading')
+        settings.booking_body = request.form.get('booking_body')
+        settings.seasonal_heading = request.form.get('seasonal_heading')
+        settings.seasonal_body = request.form.get('seasonal_body')
+        settings.pickup_card_title = request.form.get('pickup_card_title')
+        settings.pickup_card_note = request.form.get('pickup_card_note')
+        settings.confirmation_title = request.form.get('confirmation_title')
+        settings.confirmation_subtitle = request.form.get('confirmation_subtitle')
+
+        # Invoicing
+        settings.company_name = request.form.get('company_name')
+        settings.company_vat_number = request.form.get('company_vat_number')
+        settings.company_registration = request.form.get('company_registration')
+        settings.company_invoice_email = request.form.get('company_invoice_email')
+        settings.company_invoice_phone = request.form.get('company_invoice_phone')
+        settings.company_invoice_address = request.form.get('company_invoice_address')
+        settings.company_bank_name = request.form.get('company_bank_name')
+        settings.company_bank_account = request.form.get('company_bank_account')
+        settings.company_sort_code = request.form.get('company_sort_code')
+        settings.company_iban = request.form.get('company_iban')
+        settings.company_swift = request.form.get('company_swift')
+        settings.invoice_notes = request.form.get('invoice_notes')
+
+        # Entrance animation controls
+        settings.entrance_enabled = request.form.get('entrance_enabled') == 'on'
+        settings.entrance_title = request.form.get('entrance_title') or settings.site_title or 'Atelier Gourmand'
+        settings.entrance_subtitle = request.form.get('entrance_subtitle')
+        settings.entrance_description = request.form.get('entrance_description')
+        settings.entrance_extra_text = request.form.get('entrance_extra_text')
+        settings.entrance_duration_ms = int(request.form.get('entrance_duration_ms') or settings.entrance_duration_ms or 2000)
+        settings.entrance_fade_ms = int(request.form.get('entrance_fade_ms') or settings.entrance_fade_ms or 800)
         
         db.session.commit()
         flash('Settings updated successfully', 'success')
@@ -1615,8 +2065,33 @@ def admin_settings():
 @login_required
 def admin_orders():
     """Admin orders list"""
-    orders = Order.query.order_by(Order.created_at.desc()).all()
-    return render_template('admin/orders.html', orders=orders)
+    status = request.args.get('status')
+    payment = request.args.get('payment')
+    search = (request.args.get('search') or '').strip()
+    sort = request.args.get('sort', 'desc')
+
+    q = Order.query
+    if status:
+        q = q.filter(Order.status == status)
+    if payment:
+        q = q.filter(Order.payment_status == payment)
+    if search:
+        like = f"%{search}%"
+        q = q.filter(
+            db.or_(
+                Order.order_number.ilike(like),
+                Order.customer_name.ilike(like),
+                Order.customer_email.ilike(like),
+            )
+        )
+
+    if sort == 'asc':
+        q = q.order_by(Order.created_at.asc())
+    else:
+        q = q.order_by(Order.created_at.desc())
+
+    orders = q.all()
+    return render_template('admin/orders.html', orders=orders, status_filter=status, payment_filter=payment, search=search, sort=sort)
 
 @app.route('/admin/orders/<int:id>')
 @login_required
@@ -1624,6 +2099,15 @@ def admin_order_detail(id):
     """Admin order detail"""
     order = Order.query.get_or_404(id)
     return render_template('admin/order_detail.html', order=order)
+
+
+@app.route('/admin/orders/<int:id>/print')
+@login_required
+def admin_order_print(id):
+    order = Order.query.get_or_404(id)
+    settings = SiteSettings.query.first()
+    currency_symbol = CURRENCY_SYMBOLS.get(order.currency or app.config['DEFAULT_CURRENCY'], '£')
+    return render_template('admin/order_print.html', order=order, settings=settings, currency_symbol=currency_symbol)
 
 @app.route('/admin/orders/<int:id>/status', methods=['POST'])
 @login_required
@@ -1637,6 +2121,55 @@ def admin_update_order_status(id):
     flash('Order updated successfully!', 'success')
     return redirect(url_for('admin_order_detail', id=id))
 
+
+@app.route('/admin/orders/<int:id>/cancel', methods=['POST'])
+@login_required
+def admin_cancel_order(id):
+    order = Order.query.get_or_404(id)
+    order.status = 'cancelled'
+    if order.payment_status == 'paid':
+        order.payment_status = 'refunded'
+    db.session.commit()
+    flash('Order cancelled.', 'success')
+    return redirect(url_for('admin_order_detail', id=id))
+
+
+@app.route('/admin/orders/<int:id>/delete', methods=['POST'])
+@login_required
+def admin_delete_order(id):
+    order = Order.query.get_or_404(id)
+    db.session.delete(order)
+    db.session.commit()
+    flash('Order deleted.', 'success')
+    return redirect(url_for('admin_orders'))
+
+
+@app.route('/admin/orders/<int:id>/invoice')
+@login_required
+def admin_order_invoice(id):
+    order = Order.query.get_or_404(id)
+    settings = SiteSettings.query.first()
+    currency_symbol = CURRENCY_SYMBOLS.get(order.currency or app.config['DEFAULT_CURRENCY'], '£')
+    invoice_number = order.order_number
+    invoice_date = order.created_at.date()
+    return render_invoice_template(order, settings, currency_symbol, invoice_number, invoice_date, for_email=False)
+
+
+@app.route('/admin/orders/<int:id>/send-invoice', methods=['POST'])
+@login_required
+def admin_send_invoice(id):
+    order = Order.query.get_or_404(id)
+    try:
+        html_body = build_invoice_html(order)
+        body = f"Invoice {order.order_number} for your order is attached below."
+        settings = SiteSettings.query.first()
+        from_email = app.config.get('SMTP_FROM') or (settings.contact_email if settings else None)
+        send_email(order.customer_email, f'Invoice {order.order_number}', body, from_email=from_email, html_body=html_body)
+        flash('Invoice sent to customer.', 'success')
+    except Exception as exc:
+        flash(f'Unable to send invoice: {exc}', 'error')
+    return redirect(url_for('admin_order_detail', id=id))
+
 @app.route('/admin/products/<int:product_id>/variants', methods=['GET', 'POST'])
 @login_required
 def admin_product_variants(product_id):
@@ -1644,13 +2177,15 @@ def admin_product_variants(product_id):
     product = Product.query.get_or_404(product_id)
     
     if request.method == 'POST':
+        stock_raw = request.form.get('stock_quantity', '').strip()
+        stock_value = int(stock_raw) if stock_raw != '' else None
         variant = ProductVariant(
             product_id=product_id,
             name=request.form['name'],
             price_modifier=float(request.form.get('price_modifier', 0)),
-            stock_quantity=int(request.form.get('stock_quantity', 0)),
+            stock_quantity=stock_value,
             sku=request.form.get('sku'),
-            is_active=request.form.get('is_active') == 'on'
+            is_active=bool(request.form.get('is_active'))
         )
         db.session.add(variant)
         db.session.commit()

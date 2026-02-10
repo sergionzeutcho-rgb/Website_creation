@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html>
+  <body style="font-family: Arial, sans-serif; color: #222;">
+    {% if settings and settings.logo_url %}
+    <div style="margin-bottom: 12px;">
+      <img src="{{ settings.logo_url }}" alt="Logo" style="max-height: 50px;">
+    </div>
+    {% endif %}
+
+    <h2 style="margin-bottom: 4px;">Invoice {{ invoice_number }}</h2>
+    <p style="margin-top: 0; color: #555;">Date: {{ invoice_date.strftime('%Y-%m-%d') }}</p>
+
+    <h3 style="margin-bottom: 4px;">Billed To</h3>
+    <p style="margin-top: 0;">
+      {{ order.customer_name }}<br />
+      {{ order.customer_email }}<br />
+      {% if order.customer_phone %}{{ order.customer_phone }}<br />{% endif %}
+    </p>
+
+    <h3 style="margin-bottom: 4px;">Items</h3>
+    <table style="width: 100%; border-collapse: collapse; margin-top: 6px;">
+      <thead>
+        <tr>
+          <th style="text-align: left; border-bottom: 1px solid #e5e5e5; padding: 6px 4px;">Description</th>
+          <th style="text-align: left; border-bottom: 1px solid #e5e5e5; padding: 6px 4px;">Qty</th>
+          <th style="text-align: left; border-bottom: 1px solid #e5e5e5; padding: 6px 4px;">Unit</th>
+          <th style="text-align: right; border-bottom: 1px solid #e5e5e5; padding: 6px 4px;">Line Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in order.items %}
+        <tr>
+          <td style="padding: 6px 4px;">{{ item.product_name }}{% if item.variant_name %} — {{ item.variant_name }}{% endif %}</td>
+          <td style="padding: 6px 4px;">{{ item.quantity }}</td>
+          <td style="padding: 6px 4px;">{{ currency_symbol }}{{ "%.2f"|format(item.unit_price) }}</td>
+          <td style="padding: 6px 4px; text-align: right;">{{ currency_symbol }}{{ "%.2f"|format(item.total_price) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <p style="margin-top: 12px;">
+      Subtotal: {{ currency_symbol }}{{ "%.2f"|format(order.subtotal) }}<br />
+      Tax: {{ currency_symbol }}{{ "%.2f"|format(order.tax) }}<br />
+      <strong>Total: {{ currency_symbol }}{{ "%.2f"|format(order.total) }}</strong>
+    </p>
+
+    <p style="color: #555;">Pickup: {{ order.pickup_date.strftime('%Y-%m-%d') }} at {{ order.pickup_time }}</p>
+
+    <h4 style="margin-bottom: 4px;">Seller</h4>
+    <p style="margin-top: 0; color: #555;">
+      {{ settings.company_name or settings.site_title or 'Atelier Gourmand by OC' }}<br />
+      {% if settings.company_invoice_address %}{{ settings.company_invoice_address }}<br />{% endif %}
+      {% if settings.company_vat_number %}VAT: {{ settings.company_vat_number }}<br />{% endif %}
+      {% if settings.company_registration %}Company: {{ settings.company_registration }}<br />{% endif %}
+      {% if settings.company_invoice_email %}Email: {{ settings.company_invoice_email }}<br />{% endif %}
+      {% if settings.company_invoice_phone %}Phone: {{ settings.company_invoice_phone }}<br />{% endif %}
+    </p>
+
+    {% if settings.invoice_notes %}
+    <p style="color: #555;">{{ settings.invoice_notes }}</p>
+    {% endif %}
+  </body>
+</html>

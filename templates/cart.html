@@ -106,7 +106,11 @@
               <a href="{{ url_for('checkout') }}" class="btn-primary">Proceed to checkout</a>
               <a href="{{ url_for('index') }}" class="btn-sec">Continue shopping</a>
             </div>
+            {% if pickup_confirmed and pickup_date and pickup_time %}
+            <p class="summary-note">Pickup slot: {{ pickup_date }} at {{ pickup_time }}.</p>
+            {% else %}
             <p class="summary-note">Pickup time is selected at checkout.</p>
+            {% endif %}
           </aside>
         </div>
       {% else %}

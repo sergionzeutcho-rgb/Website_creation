@@ -55,6 +55,14 @@
                 <label for="is_active">Active (visible on website)</label>
             </div>
         </div>
+
+        {% if product %}
+        <div class="form-group">
+            <label>Variants</label>
+            <p style="margin: 6px 0 0 0; color: #6c757d;">Add sizes or options for this product.</p>
+            <a class="btn btn-secondary" href="{{ url_for('admin_product_variants', product_id=product.id) }}">Manage variants</a>
+        </div>
+        {% endif %}
         
         <div style="display: flex; gap: 1rem;">
             <button type="submit" class="btn btn-primary">Save Product</button>

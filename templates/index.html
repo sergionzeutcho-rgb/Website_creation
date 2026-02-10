@@ -13,6 +13,9 @@
     />
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
     <link rel="stylesheet" href="{{ url_for('static', filename='animations.css') }}" />
+    <script>
+      window.entranceConfig = {{ entrance_config|tojson }};
+    </script>
   </head>
   <body>
     <div class="grain" aria-hidden="true"></div>
@@ -42,6 +45,12 @@
           <a href="#seasonal">Seasonal</a>
           <a href="#maison">Our Maison</a>
           <a class="nav-cta" href="#booking">Book a slot</a>
+        {% endif %}
+        {% if cart_count > 0 %}
+          <a class="nav-cart" href="{{ url_for('view_cart') }}">
+            <span>Cart</span>
+            <span class="cart-badge">{{ cart_count }}</span>
+          </a>
         {% endif %}
       </nav>
     </header>
@@ -93,7 +102,10 @@
       <section class="booking" id="booking">
         <div class="booking-card">
           <p class="kicker">Schedule your pickup</p>
-          <h2>I will collect my order on</h2>
+          <h2>{% if settings and settings.booking_heading %}{{ settings.booking_heading }}{% else %}I will collect my order on{% endif %}</h2>
+          <p class="booking-note" style="margin-top: 8px; color: #6c757d;">
+            {% if settings and settings.booking_body %}{{ settings.booking_body }}{% else %}Reserve your pickup slot; we'll hold it while you finish checkout.{% endif %}
+          </p>
           <form class="booking-form" id="bookingForm">
             <label>
               Date
@@ -116,14 +128,17 @@
             <button class="btn primary" type="submit">Confirm slot</button>
           </form>
           <p class="booking-note" id="booking-note">
-            Slots update every morning. We will confirm by email.
+            {% if settings and settings.pickup_card_note %}{{ settings.pickup_card_note }}{% else %}Slots update every morning. We will confirm by email.{% endif %}
           </p>
         </div>
         <div class="booking-details">
-          <h3>Seasonal Collections</h3>
+          <h3>{% if settings and settings.pickup_card_title %}{{ settings.pickup_card_title }}{% else %}Pickup at the atelier{% endif %}</h3>
           <p>
-            Limited batches, refined flavors, and a curated menu that evolves
-            each week. We focus on precision, minimalism, and clean finishes.
+            {% if settings and settings.pickup_card_note %}
+              {{ settings.pickup_card_note }}
+            {% else %}
+              Limited batches, refined flavors, and a curated menu that evolves each week. We focus on precision, minimalism, and clean finishes.
+            {% endif %}
           </p>
           <div class="detail-grid">
             <div>
@@ -145,10 +160,13 @@
       <section class="seasonal" id="seasonal">
         <div class="section-head">
           <p class="kicker">Our seasonal creations</p>
-          <h2>Delicate structures, bold fruits.</h2>
+          <h2>{% if settings and settings.seasonal_heading %}{{ settings.seasonal_heading }}{% else %}Delicate structures, bold fruits.{% endif %}</h2>
           <p>
-            A rotating selection of tarts, entremets, and petits gateaux inspired
-            by the season.
+            {% if settings and settings.seasonal_body %}
+              {{ settings.seasonal_body }}
+            {% else %}
+              A rotating selection of tarts, entremets, and petits gateaux inspired by the season.
+            {% endif %}
           </p>
         </div>
         <div class="card-grid" id="productsGrid">
@@ -229,7 +247,9 @@
             {% endif %}
           </p>
           <div class="maison-actions">
-            <a class="btn ghost" href="#collect">Discover the atelier</a>
+            {% set maison_label = maison.cta_label if maison and maison.cta_label else 'Discover the atelier' %}
+            {% set maison_href = maison.cta_url if maison and maison.cta_url else '#collect' %}
+            <a class="btn ghost" href="{{ maison_href }}">{{ maison_label }}</a>
           </div>
         </div>
         <div class="maison-media">

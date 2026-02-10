@@ -51,6 +51,27 @@
                     {% if booking.notes %}
                     <button onclick="alert('{{ booking.notes }}')" class="btn" style="padding: 0.5rem 1rem; font-size: 0.875rem;">View Notes</button>
                     {% endif %}
+                    <details>
+                        <summary style="cursor: pointer; margin-top: 6px;">Manage</summary>
+                        <div style="margin-top: 8px; display: grid; gap: 8px;">
+                            <form method="POST" action="{{ url_for('admin_booking_rebook', id=booking.id) }}" style="display: grid; gap: 6px;">
+                                <input type="date" name="pickup_date" value="{{ booking.pickup_date.strftime('%Y-%m-%d') }}" required>
+                                <input type="time" name="pickup_time" value="{{ booking.pickup_time }}" required>
+                                <textarea name="message" rows="2" placeholder="Optional message to send"></textarea>
+                                <button type="submit" class="btn" style="padding: 0.5rem 0.75rem; font-size: 0.85rem;">Rebook + Email</button>
+                            </form>
+
+                            <form method="POST" action="{{ url_for('admin_booking_email', id=booking.id) }}" style="display: grid; gap: 6px;">
+                                <input type="text" name="subject" placeholder="Subject" value="Update to your pickup booking">
+                                <textarea name="message" rows="2" placeholder="Write your message" required></textarea>
+                                <button type="submit" class="btn" style="padding: 0.5rem 0.75rem; font-size: 0.85rem;">Send Email</button>
+                            </form>
+
+                            <form method="POST" action="{{ url_for('admin_booking_delete', id=booking.id) }}" onsubmit="return confirm('Delete this booking?');">
+                                <button type="submit" class="btn btn-danger" style="padding: 0.5rem 0.75rem; font-size: 0.85rem; width: 100%;">Delete</button>
+                            </form>
+                        </div>
+                    </details>
                 </td>
             </tr>
             {% endfor %}
