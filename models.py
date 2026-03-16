@@ -1,14 +1,18 @@
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import UserMixin
-from datetime import datetime
+from datetime import datetime, timezone
 
 db = SQLAlchemy()
+
+
+def utcnow():
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     email = db.Column(db.String(120), unique=True, nullable=False)
     password_hash = db.Column(db.String(256), nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=utcnow)
 
 
 class Customer(db.Model):
@@ -17,7 +21,7 @@ class Customer(db.Model):
     password_hash = db.Column(db.String(256), nullable=False)
     name = db.Column(db.String(200))
     phone = db.Column(db.String(50))
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=utcnow)
 
 class Product(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -38,8 +42,8 @@ class Product(db.Model):
     # SEO
     slug = db.Column(db.String(250), unique=True)  # URL-friendly name
     
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=utcnow)
+    updated_at = db.Column(db.DateTime, default=utcnow, onupdate=utcnow)
     
     # Relationships
     variants = db.relationship('ProductVariant', backref='product', lazy=True, cascade='all, delete-orphan')
@@ -55,7 +59,7 @@ class ProductVariant(db.Model):
     sku = db.Column(db.String(100))  # Stock Keeping Unit
     is_active = db.Column(db.Boolean, default=True)
     order = db.Column(db.Integer, default=0)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=utcnow)
 
 class ProductImage(db.Model):
     """Additional product images"""
@@ -63,15 +67,15 @@ class ProductImage(db.Model):
     product_id = db.Column(db.Integer, db.ForeignKey('product.id'), nullable=False)
     image_url = db.Column(db.String(500), nullable=False)
     order = db.Column(db.Integer, default=0)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=utcnow)
 
 class Cart(db.Model):
     """Shopping cart - can be session-based or user-based"""
     id = db.Column(db.Integer, primary_key=True)
     session_id = db.Column(db.String(100))  # For guest users
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)  # For logged-in users
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=utcnow)
+    updated_at = db.Column(db.DateTime, default=utcnow, onupdate=utcnow)
     
     items = db.relationship('CartItem', backref='cart', lazy=True, cascade='all, delete-orphan')
 
@@ -83,8 +87,8 @@ class CartItem(db.Model):
     variant_id = db.Column(db.Integer, db.ForeignKey('product_variant.id'), nullable=True)
     quantity = db.Column(db.Integer, default=1)
     price_at_add = db.Column(db.Float, nullable=False)  # Store price when added to cart
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=utcnow)
+    updated_at = db.Column(db.DateTime, default=utcnow, onupdate=utcnow)
     
     product = db.relationship('Product', backref='cart_items')
     variant = db.relationship('ProductVariant', backref='cart_items')
@@ -127,8 +131,8 @@ class Order(db.Model):
     notes = db.Column(db.Text)
     admin_notes = db.Column(db.Text)
     
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=utcnow)
+    updated_at = db.Column(db.DateTime, default=utcnow, onupdate=utcnow)
     
     items = db.relationship('OrderItem', backref='order', lazy=True, cascade='all, delete-orphan')
     customer = db.relationship('Customer', backref='orders', lazy=True)
@@ -159,7 +163,7 @@ class HeroSection(db.Model):
     media_type = db.Column(db.String(20), default='image')  # 'image' or 'video'
     location = db.Column(db.String(200))
     hours = db.Column(db.String(200))
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=utcnow, onupdate=utcnow)
 
 class MaisonSection(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -168,7 +172,7 @@ class MaisonSection(db.Model):
     image_url = db.Column(db.String(500))
     cta_label = db.Column(db.String(200))
     cta_url = db.Column(db.String(500))
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=utcnow, onupdate=utcnow)
 
 class Booking(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -178,7 +182,7 @@ class Booking(db.Model):
     phone = db.Column(db.String(50))
     notes = db.Column(db.Text)
     status = db.Column(db.String(20), default='pending')  # pending, confirmed, cancelled
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=utcnow)
 
 class AvailableTimeSlot(db.Model):
     """Define available time slots for bookings"""
@@ -186,14 +190,14 @@ class AvailableTimeSlot(db.Model):
     time_slot = db.Column(db.String(20), nullable=False, unique=True)  # e.g., "09:00", "10:30"
     is_active = db.Column(db.Boolean, default=True)
     order = db.Column(db.Integer, default=0)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=utcnow)
 
 class BlockedDate(db.Model):
     """Block entire days (holidays, vacations, etc.)"""
     id = db.Column(db.Integer, primary_key=True)
     date = db.Column(db.Date, nullable=False, unique=True)
     reason = db.Column(db.String(200))
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=utcnow)
 
 class BlockedTimeSlot(db.Model):
     """Block specific time slots on specific dates"""
@@ -201,7 +205,7 @@ class BlockedTimeSlot(db.Model):
     date = db.Column(db.Date, nullable=False)
     time_slot = db.Column(db.String(20), nullable=False)
     reason = db.Column(db.String(200))
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=utcnow)
     
     __table_args__ = (db.UniqueConstraint('date', 'time_slot', name='_date_time_uc'),)
 
@@ -212,7 +216,7 @@ class BookingSettings(db.Model):
     advance_booking_days = db.Column(db.Integer, default=30)  # How many days in advance customers can book
     min_advance_hours = db.Column(db.Integer, default=48)  # Minimum hours before pickup
     booking_enabled = db.Column(db.Boolean, default=True)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=utcnow, onupdate=utcnow)
 
 class SiteSettings(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -264,7 +268,7 @@ class SiteSettings(db.Model):
     company_swift = db.Column(db.String(100))
     invoice_notes = db.Column(db.Text)
     invoice_template_path = db.Column(db.String(255))
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=utcnow, onupdate=utcnow)
 
     # Maintenance page
     maintenance_enabled = db.Column(db.Boolean, default=False)
@@ -290,8 +294,8 @@ class NavigationItem(db.Model):
     is_active = db.Column(db.Boolean, default=True)
     order = db.Column(db.Integer, default=0)
     target = db.Column(db.String(20), default='_self')  # _self or _blank
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=utcnow)
+    updated_at = db.Column(db.DateTime, default=utcnow, onupdate=utcnow)
 
 class Discount(db.Model):
     """Discount codes and promotions"""
@@ -322,8 +326,8 @@ class Discount(db.Model):
     start_date = db.Column(db.DateTime)
     end_date = db.Column(db.DateTime)
     
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=utcnow)
+    updated_at = db.Column(db.DateTime, default=utcnow, onupdate=utcnow)
 
 class DeliveryZone(db.Model):
     """Delivery zones with custom pricing"""
@@ -335,6 +339,6 @@ class DeliveryZone(db.Model):
     estimated_delivery_time = db.Column(db.String(50))  # e.g., "30-45 mins"
     is_active = db.Column(db.Boolean, default=True)
     order = db.Column(db.Integer, default=0)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=utcnow)
+    updated_at = db.Column(db.DateTime, default=utcnow, onupdate=utcnow)
 

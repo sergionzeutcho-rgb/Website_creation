@@ -100,6 +100,8 @@ Set these in your hosting environment (recommended) or `.env` for local testing:
 - `PAYMENT_BASE_URL` (e.g., `https://your-domain.com`)
 - `PAYMENT_SUCCESS_PATH` (default `/payment/success`)
 - `PAYMENT_CANCEL_PATH` (default `/payment/cancel`)
+- `RATELIMIT_STORAGE_URI` (default `memory://`; use Redis or similar in production)
+- `RATELIMIT_STRATEGY` (default `fixed-window`)
 - `DEFAULT_CURRENCY`, `BASE_CURRENCY`
 - `AUTO_CURRENCY_BY_IP` (true/false)
 - `CURRENCY_RATES` (example: `EUR:1.15,USD:1.27,CAD:1.72`)
@@ -124,6 +126,7 @@ Set `PAYMENT_BASE_URL=http://localhost:5000` and run the app.
 - Set `FLASK_ENV=production`.
 - Enable HTTPS and set `FORCE_HTTPS=true` behind your reverse proxy.
 - Configure secure cookies with `SESSION_COOKIE_SECURE=true`.
+- Set `RATELIMIT_STORAGE_URI` to a shared backend such as Redis instead of `memory://`.
 - Use Stripe/PayPal hosted checkout or approved SDK flows; never collect card data directly.
 - Create a Stripe/PayPal webhook endpoint and verify signatures before updating order status.
 - Rotate admin credentials and remove default passwords.

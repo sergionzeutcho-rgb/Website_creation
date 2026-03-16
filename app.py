@@ -16,7 +16,7 @@ from paypalcheckoutsdk.orders import OrdersCreateRequest, OrdersCaptureRequest
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.utils import secure_filename
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
 from sqlalchemy import func
 from dotenv import load_dotenv
 
@@ -27,6 +27,10 @@ def get_bool_env(name, default=False):
     if value is None:
         return default
     return value.strip().lower() in {'1', 'true', 'yes', 'on'}
+
+
+def utcnow():
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 def send_email(to_email, subject, body, from_email=None, html_body=None):
     smtp_host = app.config.get('SMTP_HOST')
@@ -55,7 +59,7 @@ def send_email(to_email, subject, body, from_email=None, html_body=None):
         server.send_message(msg)
 
 def build_order_confirmation_body(order):
-    currency_symbol = CURRENCY_SYMBOLS.get(order.currency or app.config['DEFAULT_CURRENCY'], '£')
+    currency_symbol = CURRENCY_SYMBOLS.get(order.currency or app.config['DEFAULT_CURRENCY'], '\u00a3')
     lines = [
         'Thank you for your order with Atelier Gourmand by OC!',
         '',
@@ -92,7 +96,7 @@ def build_order_confirmation_body(order):
 
 def build_order_confirmation_html(order):
     settings = SiteSettings.query.first()
-    currency_symbol = CURRENCY_SYMBOLS.get(order.currency or app.config['DEFAULT_CURRENCY'], '£')
+    currency_symbol = CURRENCY_SYMBOLS.get(order.currency or app.config['DEFAULT_CURRENCY'], '\u00a3')
     return render_template(
         'emails/order_confirmation.html',
         order=order,
@@ -103,7 +107,7 @@ def build_order_confirmation_html(order):
 
 def build_invoice_html(order):
     settings = SiteSettings.query.first()
-    currency_symbol = CURRENCY_SYMBOLS.get(order.currency or app.config['DEFAULT_CURRENCY'], '£')
+    currency_symbol = CURRENCY_SYMBOLS.get(order.currency or app.config['DEFAULT_CURRENCY'], '\u00a3')
     invoice_number = order.order_number
     invoice_date = order.created_at.date()
     return render_invoice_template(order, settings, currency_symbol, invoice_number, invoice_date, for_email=True)
@@ -115,12 +119,12 @@ def build_order_number(settings=None):
     separator = os.getenv('ORDER_SEPARATOR', '-').strip() or '-'
     pad = int(os.getenv('ORDER_SEQ_PAD', '3') or 3)
 
-    today = datetime.utcnow().date()
+    today = utcnow().date()
     start = datetime.combine(today, datetime.min.time())
     end = datetime.combine(today, datetime.max.time())
     daily_count = Order.query.filter(Order.created_at >= start, Order.created_at <= end).count() + 1
 
-    date_part = datetime.utcnow().strftime(date_fmt)
+    date_part = utcnow().strftime(date_fmt)
     seq_part = str(daily_count).zfill(pad)
     return f"{prefix}{separator}{date_part}{separator}{seq_part}"
 
@@ -212,14 +216,16 @@ app.config['SMTP_USERNAME'] = os.getenv('SMTP_USERNAME')
 app.config['SMTP_PASSWORD'] = os.getenv('SMTP_PASSWORD')
 app.config['SMTP_USE_TLS'] = get_bool_env('SMTP_USE_TLS', True)
 app.config['SMTP_FROM'] = os.getenv('SMTP_FROM')
+app.config['RATELIMIT_STORAGE_URI'] = os.getenv('RATELIMIT_STORAGE_URI', 'memory://')
+app.config['RATELIMIT_STRATEGY'] = os.getenv('RATELIMIT_STRATEGY', 'fixed-window')
 
 # Allowed extensions for uploads
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp', 'mp4', 'mov', 'avi'}
 TEMPLATE_EXTENSIONS = {'html', 'htm'}
 
 CURRENCY_SYMBOLS = {
-    'GBP': '£',
-    'EUR': '€',
+    'GBP': '\u00a3',
+    'EUR': '\u20ac',
     'USD': '$',
     'CAD': 'C$',
 }
@@ -247,7 +253,13 @@ from models import (db, User, Customer, Product, ProductVariant, ProductImage, H
 db.init_app(app)
 ckeditor = CKEditor(app)
 csrf = CSRFProtect(app)
-limiter = Limiter(get_remote_address, app=app, default_limits=[])
+limiter = Limiter(
+    get_remote_address,
+    app=app,
+    default_limits=[],
+    storage_uri=app.config['RATELIMIT_STORAGE_URI'],
+    strategy=app.config['RATELIMIT_STRATEGY'],
+)
 
 login_manager = LoginManager(app)
 login_manager.login_view = 'admin_login'
@@ -320,7 +332,7 @@ def get_current_customer():
     customer_id = session.get('customer_id')
     if not customer_id:
         return None
-    return Customer.query.get(customer_id)
+    return db.session.get(Customer, customer_id)
 
 def get_paypal_environment():
     mode = app.config['PAYPAL_MODE'].lower()
@@ -333,6 +345,16 @@ def get_paypal_environment():
         client_id=app.config['PAYPAL_CLIENT_ID'],
         client_secret=app.config['PAYPAL_CLIENT_SECRET']
     )
+
+
+def configure_paypal_credentials(settings=None):
+    client_id = app.config['PAYPAL_CLIENT_ID'] or (settings.paypal_client_id if settings else None)
+    client_secret = app.config['PAYPAL_CLIENT_SECRET']
+    if client_id:
+        app.config['PAYPAL_CLIENT_ID'] = client_id
+    if client_secret:
+        app.config['PAYPAL_CLIENT_SECRET'] = client_secret
+    return client_id, client_secret
 
 def get_paypal_client():
     return PayPalHttpClient(get_paypal_environment())
@@ -373,6 +395,44 @@ def verify_paypal_webhook(event, headers):
     response.raise_for_status()
     return response.json().get('verification_status') == 'SUCCESS'
 
+
+def payment_is_confirmed(order):
+    return (order.payment_status or '').lower() in {'paid', 'completed', 'succeeded'}
+
+
+def mark_order_paid(order):
+    order.payment_status = 'paid'
+    order.status = 'confirmed'
+
+
+def confirm_stripe_checkout(order, stripe_secret_key, session_id):
+    stripe.api_key = stripe_secret_key
+    session_obj = stripe.checkout.Session.retrieve(session_id)
+    payment_intent_id = session_obj.get('payment_intent')
+    if payment_intent_id:
+        order.payment_intent_id = payment_intent_id
+    if session_obj.get('payment_status') == 'paid':
+        mark_order_paid(order)
+        db.session.commit()
+        return True
+    db.session.commit()
+    return False
+
+
+def capture_paypal_order(order, settings=None):
+    client_id, client_secret = configure_paypal_credentials(settings)
+    if not (client_id and client_secret and order.payment_intent_id):
+        return False
+
+    request_obj = OrdersCaptureRequest(order.payment_intent_id)
+    request_obj.prefer('return=representation')
+    response = get_paypal_client().execute(request_obj)
+    if getattr(response.result, 'status', None) == 'COMPLETED':
+        mark_order_paid(order)
+        db.session.commit()
+        return True
+    return False
+
 def get_or_create_cart():
     """Get existing cart or create new one for session"""
     if 'cart_id' not in session:
@@ -383,7 +443,7 @@ def get_or_create_cart():
         db.session.commit()
         session['cart_id'] = cart.id
     else:
-        cart = Cart.query.get(session['cart_id'])
+        cart = db.session.get(Cart, session['cart_id'])
         if not cart:
             # Session cart was deleted, create new one
             session_id = str(uuid.uuid4())
@@ -409,14 +469,14 @@ def inject_cart_count():
     cart_count = 0
     current_customer = get_current_customer()
     if 'cart_id' in session:
-        cart = Cart.query.get(session['cart_id'])
+        cart = db.session.get(Cart, session['cart_id'])
         if cart:
             cart_count = sum(item.quantity for item in cart.items)
     return {'cart_count': cart_count, 'current_customer': current_customer}
 
 @login_manager.user_loader
 def load_user(user_id):
-    return User.query.get(int(user_id))
+    return db.session.get(User, int(user_id))
 
 @app.before_request
 def enforce_https():
@@ -479,7 +539,7 @@ def api_products():
     return jsonify([{
         'id': p.id,
         'name': p.name,
-        'description': p.description,
+        'description': p.short_description or p.full_description or '',
         'price': p.price,
         'image': p.image_url,
         'order': p.order
@@ -597,13 +657,13 @@ def api_confirm_pickup():
 def api_available_slots():
     """Get available time slots for a given date, marking fully booked slots as unavailable."""
     date_str = request.args.get('date')
-    pickup_date = datetime.utcnow().date()
+    pickup_date = utcnow().date()
     if date_str:
         try:
             pickup_date = datetime.fromisoformat(date_str).date()
         except Exception:
             # Fallback to today instead of erroring to avoid breaking slot UI
-            pickup_date = datetime.utcnow().date()
+            pickup_date = utcnow().date()
 
     settings = BookingSettings.query.first()
     capacity = settings.max_bookings_per_slot if settings and settings.max_bookings_per_slot else 1
@@ -612,7 +672,10 @@ def api_available_slots():
     results = []
     for slot in active_slots:
         # Count bookings and orders using this slot
-        booking_count = Booking.query.filter_by(date=pickup_date, time_slot=slot.time_slot).filter(Booking.status != 'cancelled').count()
+        booking_count = Booking.query.filter_by(
+            pickup_date=pickup_date,
+            pickup_time=slot.time_slot,
+        ).filter(Booking.status != 'cancelled').count()
         order_count = Order.query.filter_by(pickup_date=pickup_date, pickup_time=slot.time_slot).filter(Order.status != 'cancelled').count()
         total = booking_count + order_count
         available = total < capacity
@@ -750,7 +813,7 @@ def add_to_cart():
         quantity = request.form.get('quantity', 1, type=int)
         
         product = Product.query.get_or_404(product_id)
-        variant = ProductVariant.query.get(variant_id) if variant_id else None
+        variant = db.session.get(ProductVariant, variant_id) if variant_id else None
 
         if product.product_status == 'hidden' or not product.is_active:
             flash('This product is not available.', 'error')
@@ -782,7 +845,7 @@ def add_to_cart():
         
         if existing_item:
             existing_item.quantity += quantity
-            existing_item.updated_at = datetime.utcnow()
+            existing_item.updated_at = utcnow()
         else:
             cart_item = CartItem(
                 cart_id=cart.id,
@@ -813,7 +876,7 @@ def update_cart_item(item_id):
         
         if quantity > 0:
             cart_item.quantity = quantity
-            cart_item.updated_at = datetime.utcnow()
+            cart_item.updated_at = utcnow()
             db.session.commit()
             flash('Cart updated!', 'success')
         else:
@@ -988,7 +1051,7 @@ def checkout():
                     flash('This discount code is invalid or inactive.', 'error')
                     return redirect(url_for('checkout'))
 
-                now = datetime.utcnow()
+                now = utcnow()
                 if discount_obj.start_date and now < discount_obj.start_date:
                     flash('This discount is not active yet.', 'error')
                     return redirect(url_for('checkout'))
@@ -1106,7 +1169,10 @@ def checkout():
 
             if payment_method == 'stripe':
                 stripe.api_key = stripe_secret_key
-                success_url = f"{build_base_url()}{app.config['PAYMENT_SUCCESS_PATH']}?order_number={order_number}"
+                success_url = (
+                    f"{build_base_url()}{app.config['PAYMENT_SUCCESS_PATH']}"
+                    f"?order_number={order_number}&session_id={{CHECKOUT_SESSION_ID}}"
+                )
                 cancel_url = f"{build_base_url()}{app.config['PAYMENT_CANCEL_PATH']}?order_number={order_number}"
                 session_obj = stripe.checkout.Session.create(
                     mode='payment',
@@ -1128,9 +1194,15 @@ def checkout():
                     client_reference_id=str(order.id),
                     metadata={
                         'order_number': order_number,
-                        'order_id': order.id,
+                        'order_id': str(order.id),
                         'currency': order_currency,
-                        'fx_rate': fx_rate,
+                        'fx_rate': str(fx_rate),
+                    },
+                    payment_intent_data={
+                        'metadata': {
+                            'order_number': order_number,
+                            'order_id': str(order.id),
+                        }
                     },
                 )
                 order.payment_intent_id = session_obj.get('payment_intent')
@@ -1138,8 +1210,7 @@ def checkout():
                 return redirect(session_obj.url, code=303)
 
             if payment_method == 'paypal':
-                app.config['PAYPAL_CLIENT_ID'] = paypal_client_id
-                app.config['PAYPAL_CLIENT_SECRET'] = paypal_client_secret
+                configure_paypal_credentials(settings)
                 success_url = f"{build_base_url()}{app.config['PAYMENT_SUCCESS_PATH']}?order_number={order_number}"
                 cancel_url = f"{build_base_url()}{app.config['PAYMENT_CANCEL_PATH']}?order_number={order_number}"
                 request_obj = OrdersCreateRequest()
@@ -1261,18 +1332,35 @@ def order_confirmation(order_number):
     """Order confirmation page"""
     order = Order.query.filter_by(order_number=order_number).first_or_404()
     settings = SiteSettings.query.first()
-    currency_symbol = CURRENCY_SYMBOLS.get(order.currency or app.config['DEFAULT_CURRENCY'], '£')
+    currency_symbol = CURRENCY_SYMBOLS.get(order.currency or app.config['DEFAULT_CURRENCY'], '\u00a3')
     return render_template('order_confirmation.html', order=order, settings=settings, currency_symbol=currency_symbol)
 
 @app.route('/payment/success')
 def payment_success():
     order_number = request.args.get('order_number')
+    session_id = request.args.get('session_id')
     order = Order.query.filter_by(order_number=order_number).first()
     if not order:
         flash('Order not found.', 'error')
         return redirect(url_for('index'))
+    settings = SiteSettings.query.first()
+
+    if order.payment_method == 'stripe' and not payment_is_confirmed(order) and session_id:
+        stripe_secret_key = app.config['STRIPE_SECRET_KEY'] or (settings.stripe_secret_key if settings else None)
+        if stripe_secret_key:
+            try:
+                confirm_stripe_checkout(order, stripe_secret_key, session_id)
+            except Exception:
+                pass
+
+    if order.payment_method == 'paypal' and not payment_is_confirmed(order):
+        try:
+            capture_paypal_order(order, settings)
+        except Exception:
+            pass
+
     session_key = f'order_email_sent_{order_number}'
-    if not session.get(session_key):
+    if payment_is_confirmed(order) and not session.get(session_key):
         try:
             body = build_order_confirmation_body(order)
             html_body = build_order_confirmation_html(order)
@@ -1287,6 +1375,8 @@ def payment_success():
             session.modified = True
         except Exception:
             pass
+    elif not payment_is_confirmed(order):
+        flash('Payment confirmation is still pending. Refresh shortly if the status does not update.', 'warning')
     return redirect(url_for('order_confirmation', order_number=order_number))
 
 @app.route('/payment/cancel')
@@ -1318,8 +1408,9 @@ def stripe_webhook():
         order_number = data_object.get('metadata', {}).get('order_number')
         order = Order.query.filter_by(order_number=order_number).first()
         if order:
-            order.payment_status = 'paid'
-            order.status = 'confirmed'
+            if data_object.get('payment_intent'):
+                order.payment_intent_id = data_object.get('payment_intent')
+            mark_order_paid(order)
             db.session.commit()
     elif event_type in ['checkout.session.async_payment_failed', 'payment_intent.payment_failed']:
         order_number = data_object.get('metadata', {}).get('order_number')
@@ -1343,14 +1434,17 @@ def paypal_webhook():
 
     event_type = event.get('event_type')
     resource = event.get('resource', {})
-    order_id = resource.get('id')
+    related_ids = resource.get('supplementary_data', {}).get('related_ids', {})
+    order_id = related_ids.get('order_id') or resource.get('id')
     order = Order.query.filter_by(payment_intent_id=order_id).first()
-    if order and event_type in ['CHECKOUT.ORDER.APPROVED', 'PAYMENT.CAPTURE.COMPLETED']:
-        order.payment_status = 'paid'
-        order.status = 'confirmed'
+    if order and event_type == 'PAYMENT.CAPTURE.COMPLETED':
+        mark_order_paid(order)
         db.session.commit()
-    elif order and event_type in ['PAYMENT.CAPTURE.DENIED', 'PAYMENT.CAPTURE.REFUNDED']:
+    elif order and event_type == 'PAYMENT.CAPTURE.DENIED':
         order.payment_status = 'failed'
+        db.session.commit()
+    elif order and event_type == 'PAYMENT.CAPTURE.REFUNDED':
+        order.payment_status = 'refunded'
         db.session.commit()
 
     return jsonify({'status': 'ok'})
@@ -2245,7 +2339,7 @@ def admin_order_detail(id):
 def admin_order_print(id):
     order = Order.query.get_or_404(id)
     settings = SiteSettings.query.first()
-    currency_symbol = CURRENCY_SYMBOLS.get(order.currency or app.config['DEFAULT_CURRENCY'], '£')
+    currency_symbol = CURRENCY_SYMBOLS.get(order.currency or app.config['DEFAULT_CURRENCY'], '\u00a3')
     return render_template('admin/order_print.html', order=order, settings=settings, currency_symbol=currency_symbol)
 
 @app.route('/admin/orders/<int:id>/status', methods=['POST'])
@@ -2288,7 +2382,7 @@ def admin_delete_order(id):
 def admin_order_invoice(id):
     order = Order.query.get_or_404(id)
     settings = SiteSettings.query.first()
-    currency_symbol = CURRENCY_SYMBOLS.get(order.currency or app.config['DEFAULT_CURRENCY'], '£')
+    currency_symbol = CURRENCY_SYMBOLS.get(order.currency or app.config['DEFAULT_CURRENCY'], '\u00a3')
     invoice_number = order.order_number
     invoice_date = order.created_at.date()
     return render_invoice_template(order, settings, currency_symbol, invoice_number, invoice_date, for_email=False)
