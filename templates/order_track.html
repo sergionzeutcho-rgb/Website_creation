@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Track Order {{ order.order_number }} - Atelier Gourmand by OC</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Work+Sans:wght@300;400;500;600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="brand">
+        <div class="brand-mark">
+          {% if settings and settings.logo_url %}
+          <img src="{{ settings.logo_url }}" alt="Logo" class="brand-logo">
+          {% endif %}
+          <div class="brand-text">
+            <span class="brand-title">Atelier Gourmand</span>
+            <span class="brand-subtitle">by OC · London</span>
+          </div>
+        </div>
+      </div>
+      <nav class="site-nav" aria-label="Primary">
+        <a href="{{ url_for('index') }}">Home</a>
+      </nav>
+    </header>
+
+    <main class="page-shell" style="max-width: 800px; margin: 0 auto;">
+      <div class="page-head" style="text-align: center;">
+        <div>
+          <p class="eyebrow">Order Tracking</p>
+          <h1 class="page-title">{{ order.order_number }}</h1>
+          <p class="page-subtitle">Placed {{ order.created_at.strftime('%B %d, %Y at %H:%M') }}</p>
+        </div>
+      </div>
+
+      {% if order.status == 'cancelled' %}
+      <div style="text-align: center; padding: 32px; background: #fef2f2; border-radius: 20px; margin-bottom: 32px;">
+        <svg width="48" height="48" fill="none" stroke="#ef4444" stroke-width="1.5" viewBox="0 0 24 24" style="margin-bottom: 12px;"><circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/></svg>
+        <h2 style="color: #991b1b; margin-bottom: 8px;">Order Cancelled</h2>
+        <p style="color: #7f1d1d;">This order has been cancelled. Please contact us if you have questions.</p>
+      </div>
+      {% else %}
+      <div class="track-timeline">
+        {% for step in status_steps %}
+        <div class="track-step {% if loop.index0 < current_index %}completed{% elif loop.index0 == current_index %}active{% endif %}">
+          <div class="track-dot">
+            {% if loop.index0 < current_index %}
+            <svg width="16" height="16" fill="white" viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+            {% elif loop.index0 == current_index %}
+            <span style="width:10px;height:10px;background:white;border-radius:50%;display:block;"></span>
+            {% endif %}
+          </div>
+          <span class="track-label">{{ step|replace('_', ' ')|title }}</span>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 32px;">
+        <section class="card-surface" style="padding: 28px; border-radius: 20px;">
+          <h3 style="font-size: 16px; margin-bottom: 16px; color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.1em; font-family: 'Work Sans', sans-serif; font-weight: 600;">Pickup Details</h3>
+          <div style="display: grid; gap: 12px;">
+            <div>
+              <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--ink-soft);">Date</div>
+              <div style="font-weight: 600;">{{ order.pickup_date.strftime('%A, %B %d, %Y') }}</div>
+            </div>
+            <div>
+              <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--ink-soft);">Time</div>
+              <div style="font-weight: 600;">{{ order.pickup_time }}</div>
+            </div>
+            {% if order.fulfillment_method == 'delivery' and order.delivery_address %}
+            <div>
+              <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--ink-soft);">Delivery Address</div>
+              <div style="font-weight: 600;">{{ order.delivery_address }}</div>
+            </div>
+            {% endif %}
+          </div>
+        </section>
+
+        <section class="card-surface" style="padding: 28px; border-radius: 20px;">
+          <h3 style="font-size: 16px; margin-bottom: 16px; color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.1em; font-family: 'Work Sans', sans-serif; font-weight: 600;">Order Summary</h3>
+          {% for item in order.items %}
+          <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid rgba(0,0,0,0.05);">
+            <div>
+              <span style="font-weight: 500;">{{ item.product_name }}</span>
+              {% if item.variant_name %}<span style="color: var(--ink-soft); font-size: 13px;"> · {{ item.variant_name }}</span>{% endif %}
+              <span style="color: var(--ink-soft); font-size: 13px;"> × {{ item.quantity }}</span>
+            </div>
+            <span style="font-weight: 600;">{{ currency_symbol }}{{ "%.2f"|format(item.total_price) }}</span>
+          </div>
+          {% endfor %}
+          <div style="display: flex; justify-content: space-between; margin-top: 16px; padding-top: 12px; border-top: 2px solid var(--gold); font-size: 18px; font-weight: 700; color: var(--gold);">
+            <span>Total</span>
+            <span>{{ currency_symbol }}{{ "%.2f"|format(order.total) }}</span>
+          </div>
+        </section>
+      </div>
+
+      <div style="text-align: center; margin-top: 32px;">
+        <p style="color: var(--ink-soft); font-size: 14px; margin-bottom: 16px;">
+          Questions about your order? Contact us at
+          {% if settings and settings.contact_email %}
+          <a href="mailto:{{ settings.contact_email }}" style="color: var(--gold);">{{ settings.contact_email }}</a>
+          {% else %}
+          <a href="mailto:hello@ateliergourmandbyoc.co.uk" style="color: var(--gold);">hello@ateliergourmandbyoc.co.uk</a>
+          {% endif %}
+        </p>
+        <a href="{{ url_for('index') }}" class="btn primary">Back to atelier</a>
+      </div>
+    </main>
+
+    <footer class="site-footer" style="margin-top: 60px;">
+      <div>
+        <h3>{% if settings and settings.footer_name %}{{ settings.footer_name }}{% else %}Atelier Gourmand by OC{% endif %}</h3>
+        <p>{% if settings and settings.address %}{{ settings.address }}{% else %}Wilton Place, SW1X 7RL · London{% endif %}</p>
+      </div>
+      <div>
+        <p class="footer-label">Contact</p>
+        <p>{% if settings and settings.contact_email %}{{ settings.contact_email }}{% else %}hello@ateliergourmandbyoc.co.uk{% endif %}</p>
+      </div>
+      <div>
+        <p class="footer-label">Legal</p>
+        <p class="footer-legal">{% if settings and settings.footer_copyright %}{{ settings.footer_copyright }}{% else %}© 2026 Atelier Gourmand by OC. All rights reserved.{% endif %}</p>
+      </div>
+    </footer>
+  </body>
+</html>

@@ -2,10 +2,31 @@
 
 {% block title %}Order {{ order.order_number }} - Admin{% endblock %}
 
+{% block breadcrumbs %}
+<div class="admin-breadcrumbs">
+    <a href="{{ url_for('admin_dashboard') }}">Dashboard</a>
+    <span class="sep">/</span>
+    <a href="{{ url_for('admin_orders') }}">Orders</a>
+    <span class="sep">/</span>
+    <span>{{ order.order_number }}</span>
+</div>
+{% endblock %}
+
 {% block content %}
 <div style="margin-bottom: 32px">
   <a href="{{ url_for('admin_orders') }}" style="color: #c5a572; text-decoration: none">← Back to orders</a>
   <h1 style="font-size: 32px; font-weight: 600; margin-top: 12px">Order {{ order.order_number }}</h1>
+  <!-- Quick Status Bar -->
+  <div style="display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap;">
+    {% for s in ['pending','confirmed','preparing','ready','completed'] %}
+    <form method="POST" action="{{ url_for('admin_update_order_status', id=order.id) }}" style="margin:0;">
+      <input type="hidden" name="status" value="{{ s }}">
+      <input type="hidden" name="payment_status" value="{{ order.payment_status }}">
+      <input type="hidden" name="admin_notes" value="{{ order.admin_notes or '' }}">
+      <button type="submit" style="padding: 6px 14px; border-radius: 20px; font-size: 12px; font-weight: 600; cursor: pointer; border: 2px solid {% if order.status == s %}#c5a572{% else %}#e5e5e4{% endif %}; background: {% if order.status == s %}#faf5ee{% else %}white{% endif %}; color: {% if order.status == s %}#92722f{% else %}#71717a{% endif %};">{{ s|title }}</button>
+    </form>
+    {% endfor %}
+  </div>
 </div>
 
 <div style="display: grid; grid-template-columns: 1fr 400px; gap: 32px">

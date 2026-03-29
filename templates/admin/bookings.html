@@ -2,6 +2,14 @@
 
 {% block title %}Bookings{% endblock %}
 
+{% block breadcrumbs %}
+<div class="admin-breadcrumbs">
+    <a href="{{ url_for('admin_dashboard') }}">Dashboard</a>
+    <span class="sep">/</span>
+    <span>Bookings</span>
+</div>
+{% endblock %}
+
 {% block content %}
 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
     <h1 style="font-size: 2rem;">Bookings</h1>
@@ -81,4 +89,72 @@
     <p style="color: #6c757d; text-align: center; padding: 2rem;">No bookings found</p>
     {% endif %}
 </div>
+
+<!-- Calendar View -->
+<div class="card" style="margin-top: 1.5rem; padding: 1.75rem 2rem;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;">
+        <h2 style="font-size: 1.25rem;">Booking Calendar</h2>
+        <div style="display: flex; gap: 0.5rem; align-items: center;">
+            <button onclick="changeCalMonth(-1)" class="btn" style="padding: 0.4rem 0.75rem; font-size: 0.85rem;">← Prev</button>
+            <span id="calTitle" style="font-weight: 600; min-width: 140px; text-align: center;"></span>
+            <button onclick="changeCalMonth(1)" class="btn" style="padding: 0.4rem 0.75rem; font-size: 0.85rem;">Next →</button>
+        </div>
+    </div>
+    <div id="bookingCalendar" style="display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px;"></div>
+    <div style="margin-top: 1rem; display: flex; gap: 1.25rem; font-size: 0.8rem; color: #71717a;">
+        <span><span style="display: inline-block; width: 10px; height: 10px; background: #c5a572; border-radius: 50; margin-right: 4px;"></span> Has bookings</span>
+        <span><span style="display: inline-block; width: 10px; height: 10px; background: #f5f5f4; border: 1px solid #d4d4d8; border-radius: 50%; margin-right: 4px;"></span> No bookings</span>
+    </div>
+</div>
+
+{% block extra_js %}
+<script>
+(function() {
+    const bookingDates = {};
+    {% for booking in bookings %}
+    (function() {
+        const d = '{{ booking.pickup_date.strftime("%Y-%m-%d") }}';
+        bookingDates[d] = (bookingDates[d] || 0) + 1;
+    })();
+    {% endfor %}
+
+    let calDate = new Date();
+    const calEl = document.getElementById('bookingCalendar');
+    const calTitle = document.getElementById('calTitle');
+    const days = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+
+    window.changeCalMonth = function(delta) {
+        calDate.setMonth(calDate.getMonth() + delta);
+        renderCal();
+    };
+
+    function renderCal() {
+        const year = calDate.getFullYear();
+        const month = calDate.getMonth();
+        calTitle.textContent = calDate.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+        
+        let html = days.map(d => `<div style="text-align:center;font-weight:600;font-size:0.75rem;color:#71717a;padding:8px 0;">${d}</div>`).join('');
+        
+        const firstDay = new Date(year, month, 1);
+        let startDay = firstDay.getDay() - 1;
+        if (startDay < 0) startDay = 6;
+        const daysInMonth = new Date(year, month + 1, 0).getDate();
+        const today = new Date().toISOString().slice(0, 10);
+        
+        for (let i = 0; i < startDay; i++) html += '<div></div>';
+        for (let d = 1; d <= daysInMonth; d++) {
+            const ds = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+            const count = bookingDates[ds] || 0;
+            const isToday = ds === today;
+            html += `<div style="text-align:center;padding:10px 4px;border-radius:8px;font-size:0.85rem;cursor:default;
+                ${count > 0 ? 'background:#faf5ee;border:1px solid #c5a572;font-weight:600;color:#92722f;' : 'background:#f9fafb;border:1px solid #f0f0ef;'}
+                ${isToday ? 'box-shadow:inset 0 0 0 2px #c5a572;' : ''}">
+                ${d}${count ? `<div style='font-size:0.7rem;color:#c5a572;'>${count}</div>` : ''}</div>`;
+        }
+        calEl.innerHTML = html;
+    }
+    renderCal();
+})();
+</script>
+{% endblock %}
 {% endblock %}

@@ -55,9 +55,42 @@
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 60px; margin-bottom: 60px">
           <!-- Product Images -->
           <div>
-            <div style="border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow-lg); margin-bottom: 20px">
-              <img src="{{ product.image_url or 'https://via.placeholder.com/600x600' }}" alt="{{ product.name }}" style="width: 100%; height: auto; display: block">
+            <div id="mainImageWrap" style="border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow-lg); margin-bottom: 12px; position: relative;">
+              <img id="mainProductImage" src="{{ product.image_url or 'https://via.placeholder.com/600x600' }}" alt="{{ product.name }}" style="width: 100%; height: auto; display: block">
+              {% set all_images = [product.image_url] if product.image_url else [] %}
+              {% for img in product.images|sort(attribute='order') %}
+                {% if img.image_url not in all_images %}
+                  {% set _ = all_images.append(img.image_url) %}
+                {% endif %}
+              {% endfor %}
+              {% if all_images|length > 1 %}
+              <button onclick="changeImage(-1)" style="position:absolute;left:8px;top:50%;transform:translateY(-50%);background:rgba(0,0,0,0.5);color:white;border:none;width:36px;height:36px;border-radius:50%;cursor:pointer;font-size:18px;display:flex;align-items:center;justify-content:center;">&lsaquo;</button>
+              <button onclick="changeImage(1)" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:rgba(0,0,0,0.5);color:white;border:none;width:36px;height:36px;border-radius:50%;cursor:pointer;font-size:18px;display:flex;align-items:center;justify-content:center;">&rsaquo;</button>
+              {% endif %}
             </div>
+            {% if all_images|length > 1 %}
+            <div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;">
+              {% for url in all_images %}
+              <img src="{{ url }}" alt="Image {{ loop.index }}" onclick="setImage({{ loop.index0 }})" style="width:72px;height:72px;object-fit:cover;border-radius:8px;cursor:pointer;border:2px solid {% if loop.index0 == 0 %}var(--gold){% else %}transparent{% endif %};opacity:{% if loop.index0 == 0 %}1{% else %}0.6{% endif %};transition:all 0.2s;" class="thumb-img" data-idx="{{ loop.index0 }}">
+              {% endfor %}
+            </div>
+            <script>
+              const galleryImages = {{ all_images|tojson }};
+              let currentIdx = 0;
+              function setImage(idx) {
+                currentIdx = idx;
+                document.getElementById('mainProductImage').src = galleryImages[idx];
+                document.querySelectorAll('.thumb-img').forEach(t => {
+                  const i = parseInt(t.dataset.idx);
+                  t.style.border = i === idx ? '2px solid var(--gold)' : '2px solid transparent';
+                  t.style.opacity = i === idx ? '1' : '0.6';
+                });
+              }
+              function changeImage(delta) {
+                setImage((currentIdx + delta + galleryImages.length) % galleryImages.length);
+              }
+            </script>
+            {% endif %}
           </div>
 
           <!-- Product Details -->
@@ -167,6 +200,29 @@
           <h2 style="font-family: 'Playfair Display', serif; font-size: 32px; margin-bottom: 24px">Description</h2>
           <div style="line-height: 1.8; color: #555">
             {{ product.full_description|safe }}
+          </div>
+        </div>
+        {% endif %}
+
+        <!-- Smart Recommendations -->
+        {% if recommended_products %}
+        <div style="border-top: 1px solid #eee; padding-top: 60px; margin-top: 60px;">
+          <h2 style="font-family: 'Playfair Display', serif; font-size: 28px; margin-bottom: 24px; text-align: center;">You might also like</h2>
+          <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 24px;">
+            {% for rec in recommended_products %}
+            <a href="{{ url_for('product_detail', slug=rec.slug) if rec.slug else '#' }}" style="text-decoration: none; color: inherit;">
+              <div style="background: white; border-radius: 16px; overflow: hidden; box-shadow: 0 2px 12px rgba(0,0,0,0.06); transition: transform 0.2s;">
+                <img src="{{ rec.image_url or 'https://via.placeholder.com/400x300' }}" alt="{{ rec.name }}" 
+                     style="width: 100%; height: 200px; object-fit: cover;" loading="lazy">
+                <div style="padding: 16px;">
+                  <h3 style="font-family: 'Playfair Display', serif; font-size: 18px; margin-bottom: 8px;">{{ rec.name }}</h3>
+                  {% if rec.price %}
+                  <span style="color: var(--gold); font-weight: 600; font-size: 16px;">{{ currency_symbol }}{{ "%.2f"|format(rec.price) }}</span>
+                  {% endif %}
+                </div>
+              </div>
+            </a>
+            {% endfor %}
           </div>
         </div>
         {% endif %}
@@ -508,5 +564,6 @@
         });
       }
     </script>
+    {% include 'chatbot_widget.html' %}
   </body>
 </html>

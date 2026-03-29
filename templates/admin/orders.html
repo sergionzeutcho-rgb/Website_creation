@@ -2,6 +2,14 @@
 
 {% block title %}Orders - Admin{% endblock %}
 
+{% block breadcrumbs %}
+<div class="admin-breadcrumbs">
+    <a href="{{ url_for('admin_dashboard') }}">Dashboard</a>
+    <span class="sep">/</span>
+    <span>Orders</span>
+</div>
+{% endblock %}
+
 {% block content %}
 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 32px">
   <h1 style="font-size: 32px; font-weight: 600">Orders</h1>

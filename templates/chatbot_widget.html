@@ -1,0 +1,465 @@
+<!-- Chatbot Widget partial -->
+{% if not settings or settings.chatbot_enabled is not defined or settings.chatbot_enabled %}
+<style>
+  #chatbot-widget { position:fixed; bottom:24px; right:24px; z-index:9999; }
+  #chatbot-window { display:none; width:380px; max-height:560px; background:white; border-radius:20px; box-shadow:0 12px 40px rgba(0,0,0,0.18); overflow:hidden; flex-direction:column; font-family:'Work Sans',sans-serif; }
+  .cb-header { background:#0a0908; color:white; padding:16px 20px; display:flex; justify-content:space-between; align-items:center; }
+  .cb-header-title { font-weight:600; font-size:14px; }
+  .cb-header-sub { font-size:11px; color:#c5a572; }
+  .cb-close { background:none; border:none; color:white; cursor:pointer; font-size:18px; }
+  #chatbot-messages { flex:1; overflow-y:auto; padding:16px; display:flex; flex-direction:column; gap:10px; max-height:400px; min-height:200px; }
+  .cb-msg-bot { background:#faf5ee; padding:10px 14px; border-radius:14px; border-bottom-left-radius:4px; max-width:85%; font-size:13px; line-height:1.5; color:#3f3f46; }
+  .cb-msg-user { background:#0a0908; color:white; padding:10px 14px; border-radius:14px; border-bottom-right-radius:4px; max-width:85%; font-size:13px; align-self:flex-end; }
+  .cb-typing { color:#a1a1aa; font-size:12px; padding:4px; }
+  .cb-input-row { padding:12px; border-top:1px solid #f0f0ef; display:flex; gap:8px; }
+  .cb-input { flex:1; padding:10px 14px; border:1px solid #e5e5e4; border-radius:20px; font-size:13px; outline:none; font-family:'Work Sans',sans-serif; }
+  .cb-send { background:#c5a572; color:white; border:none; border-radius:50%; width:38px; height:38px; cursor:pointer; display:flex; align-items:center; justify-content:center; }
+  .cb-toggle { width:48px; height:48px; border-radius:50%; background:linear-gradient(135deg,#c5a572,#a88a5b); color:white; border:none; cursor:pointer; box-shadow:0 4px 12px rgba(197,165,114,0.3); display:flex; align-items:center; justify-content:center; margin-left:auto; transition:transform 0.2s; opacity:0.85; }
+  .cb-toggle:hover { transform:scale(1.08); opacity:1; }
+  /* Action styles */
+  .cb-actions { display:flex; flex-wrap:wrap; gap:6px; margin-top:4px; }
+  .cb-quick-btn { background:white; border:1px solid #c5a572; color:#c5a572; padding:6px 14px; border-radius:16px; font-size:12px; cursor:pointer; font-family:'Work Sans',sans-serif; transition:all 0.2s; }
+  .cb-quick-btn:hover { background:#c5a572; color:white; }
+  .cb-product-card { background:#fff !important; border:1px solid #e5e5e4; border-radius:12px; width:100%; cursor:pointer; transition:box-shadow 0.2s; display:block !important; min-height:48px; }
+  .cb-product-card:hover { box-shadow:0 2px 8px rgba(0,0,0,0.1); }
+  .cb-product-row { display:flex !important; align-items:center; gap:10px; padding:8px 12px !important; min-height:48px; }
+  .cb-product-img { width:48px !important; height:48px !important; min-width:48px; min-height:48px; border-radius:8px; object-fit:cover; background:#f5f5f4; flex-shrink:0; }
+  .cb-product-info { flex:1; min-width:0; overflow:hidden; }
+  .cb-product-name { font-size:12px; font-weight:600; color:#0a0908; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; line-height:1.4; }
+  .cb-product-desc { font-size:11px; color:#71717a; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; line-height:1.3; }
+  .cb-product-price { font-size:12px; font-weight:600; color:#c5a572; white-space:nowrap; flex-shrink:0; }
+  .cb-add-btn { background:#c5a572 !important; color:white !important; border:none; padding:5px 12px !important; border-radius:12px; font-size:11px; cursor:pointer; font-family:'Work Sans',sans-serif; white-space:nowrap; flex-shrink:0; display:inline-block !important; }
+  .cb-add-btn:hover { background:#a88a5b !important; }
+  .cb-products-grid { display:flex !important; flex-direction:column; gap:6px; width:100%; }
+  .cb-slot-picker { width:100%; }
+  .cb-date-input { width:100%; padding:8px 12px; border:1px solid #e5e5e4; border-radius:10px; font-size:13px; font-family:'Work Sans',sans-serif; margin-bottom:8px; }
+  .cb-slot-grid { display:flex; flex-wrap:wrap; gap:6px; }
+  .cb-slot-btn { background:white; border:1px solid #c5a572; color:#0a0908; padding:6px 12px; border-radius:10px; font-size:12px; cursor:pointer; font-family:'Work Sans',sans-serif; transition:all 0.2s; }
+  .cb-slot-btn:hover, .cb-slot-btn.selected { background:#c5a572; color:white; }
+  .cb-slot-avail { font-size:10px; color:#71717a; display:block; }
+  .cb-variant-row { display:flex; gap:4px; flex-wrap:wrap; margin-top:4px; }
+  .cb-variant-btn { background:#f5f5f4; border:1px solid #e5e5e4; color:#3f3f46; padding:4px 10px; border-radius:10px; font-size:11px; cursor:pointer; font-family:'Work Sans',sans-serif; }
+  .cb-variant-btn:hover, .cb-variant-btn.selected { background:#0a0908; color:white; border-color:#0a0908; }
+  .cb-qty-row { display:flex; align-items:center; gap:6px; margin-top:4px; }
+  .cb-qty-btn { width:24px; height:24px; border-radius:50%; border:1px solid #e5e5e4; background:white; cursor:pointer; font-size:14px; display:flex; align-items:center; justify-content:center; }
+  .cb-qty-btn:hover { background:#f5f5f4; }
+  .cb-qty-val { font-size:13px; font-weight:600; min-width:20px; text-align:center; }
+  .cb-confirm-btn { background:#0a0908; color:white; border:none; padding:7px 16px; border-radius:12px; font-size:12px; cursor:pointer; font-family:'Work Sans',sans-serif; margin-top:6px; }
+  .cb-confirm-btn:hover { background:#1a1a18; }
+  .cb-error { background:#fef2f2; padding:10px 14px; border-radius:14px; border-bottom-left-radius:4px; max-width:85%; font-size:13px; color:#991b1b; }
+  .cb-nav-btn { background:#0a0908; color:white; border:none; padding:7px 16px; border-radius:12px; font-size:12px; cursor:pointer; font-family:'Work Sans',sans-serif; display:inline-flex; align-items:center; gap:4px; }
+  .cb-nav-btn:hover { background:#1a1a18; }
+  .cb-fulfillment-row { display:flex; gap:6px; margin-top:4px; }
+  .cb-fulfillment-btn { flex:1; background:white; border:1px solid #c5a572; color:#0a0908; padding:10px 8px; border-radius:10px; font-size:12px; cursor:pointer; font-family:'Work Sans',sans-serif; text-align:center; transition:all 0.2s; }
+  .cb-fulfillment-btn:hover, .cb-fulfillment-btn.selected { background:#c5a572; color:white; }
+  .cb-fulfillment-icon { font-size:18px; display:block; margin-bottom:2px; }
+</style>
+<div id="chatbot-widget">
+  <div id="chatbot-window">
+    <div class="cb-header">
+      <div>
+        <div class="cb-header-title">{{ settings.chatbot_name if settings and settings.chatbot_name else 'Atelier Gourmand' }}</div>
+        <div class="cb-header-sub">{{ settings.chatbot_subtitle if settings and settings.chatbot_subtitle else 'Le Petit Concierge' }}</div>
+      </div>
+      <button class="cb-close" onclick="toggleChatbot()">&#10005;</button>
+    </div>
+    <div id="chatbot-messages">
+      <div class="cb-msg-bot">{{ settings.chatbot_greeting if settings and settings.chatbot_greeting else "Bonjour! 🥐 I can help you browse our collection, add items to your basket, or book a pickup. What would you like?" }}</div>
+      <div class="cb-actions">
+        {% set actions_str = settings.chatbot_suggested_actions if settings and settings.chatbot_suggested_actions else 'Browse the menu,Book a slot,View my basket' %}
+        {% for action in actions_str.split(',') %}
+        <button class="cb-quick-btn" onclick="sendChatMsg('{{ action.strip() }}')">{{ action.strip() }}</button>
+        {% endfor %}
+      </div>
+    </div>
+    <div class="cb-input-row">
+      <input type="text" id="chatbot-input" class="cb-input" placeholder="Ask me anything..." onkeydown="if(event.key==='Enter')sendChat()">
+      <button class="cb-send" onclick="sendChat()">
+        <svg width="16" height="16" fill="white" viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+      </button>
+    </div>
+  </div>
+  <button id="chatbot-toggle" class="cb-toggle" onclick="toggleChatbot()">
+    <svg width="22" height="22" fill="white" viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H6l-2 2V4h16v12z"/></svg>
+  </button>
+</div>
+<script>
+const chatHistory = JSON.parse(sessionStorage.getItem('cb_history') || '[]');
+const _cbMessages = JSON.parse(sessionStorage.getItem('cb_messages') || '[]');
+
+let _lastActions = JSON.parse(sessionStorage.getItem('cb_last_actions') || 'null');
+
+function _saveChatState(latestActions) {
+  sessionStorage.setItem('cb_history', JSON.stringify(chatHistory.slice(-40)));
+  const msgs = [];
+  document.querySelectorAll('#chatbot-messages > .cb-msg-bot, #chatbot-messages > .cb-msg-user').forEach(el => {
+    msgs.push({ role: el.classList.contains('cb-msg-user') ? 'user' : 'bot', text: el.textContent });
+  });
+  sessionStorage.setItem('cb_messages', JSON.stringify(msgs.slice(-60)));
+  if (latestActions !== undefined) {
+    _lastActions = latestActions;
+    sessionStorage.setItem('cb_last_actions', JSON.stringify(latestActions));
+  }
+}
+
+function _restoreChatMessages() {
+  if (!_cbMessages.length) return;
+  const container = document.getElementById('chatbot-messages');
+  container.innerHTML = '';
+  _cbMessages.forEach(m => {
+    const bubble = document.createElement('div');
+    bubble.className = m.role === 'user' ? 'cb-msg-user' : 'cb-msg-bot';
+    bubble.textContent = m.text;
+    container.appendChild(bubble);
+  });
+  // Restore last action widgets (quick replies, nav buttons, etc.)
+  if (_lastActions && _lastActions.length) {
+    renderActions(container, _lastActions);
+  }
+  container.scrollTop = container.scrollHeight;
+}
+
+function toggleChatbot() {
+  const w = document.getElementById('chatbot-window');
+  const t = document.getElementById('chatbot-toggle');
+  if (w.style.display === 'none' || !w.style.display) {
+    w.style.display = 'flex'; t.style.display = 'none';
+    sessionStorage.setItem('cb_open', '1');
+    document.getElementById('chatbot-input').focus();
+  } else {
+    w.style.display = 'none'; t.style.display = 'flex';
+    sessionStorage.setItem('cb_open', '0');
+  }
+}
+
+function sendChatMsg(msg) {
+  document.getElementById('chatbot-input').value = msg;
+  sendChat();
+}
+
+function sendChat() {
+  const input = document.getElementById('chatbot-input');
+  const msg = input.value.trim();
+  if (!msg) return;
+  const container = document.getElementById('chatbot-messages');
+  const userBubble = document.createElement('div');
+  userBubble.className = 'cb-msg-user';
+  userBubble.textContent = msg;
+  container.appendChild(userBubble);
+  input.value = '';
+  container.scrollTop = container.scrollHeight;
+  const typing = document.createElement('div');
+  typing.className = 'cb-typing';
+  typing.textContent = "Un moment, s'il vous plaît...";
+  container.appendChild(typing);
+  chatHistory.push({role: 'user', content: msg});    _saveChatState();
+  fetch('/api/chatbot', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message: msg, history: chatHistory.slice(-20) })
+  })
+  .then(r => r.json())
+  .then(data => {
+    typing.remove();
+    chatHistory.push({role: 'assistant', content: data.reply});
+    const botBubble = document.createElement('div');
+    botBubble.className = 'cb-msg-bot';
+    botBubble.textContent = data.reply;
+    container.appendChild(botBubble);
+    if (data.actions && data.actions.length) {
+      try { processGptActions(container, data.actions); }
+      catch(e) { console.error('processGptActions error:', e); }
+    }
+    container.scrollTop = container.scrollHeight;
+    if (data.cart_count !== undefined) updateCartBadge(data.cart_count);
+    _saveChatState(data.actions || null);
+  })
+  .catch((err) => {
+    console.error('Chatbot fetch error:', err);
+    typing.remove();
+    const errBubble = document.createElement('div');
+    errBubble.className = 'cb-error';
+    errBubble.textContent = 'Pardon, something went wrong. Please try again.';
+    container.appendChild(errBubble);
+  });
+}
+
+function stripHtml(s) { const d = document.createElement('div'); d.innerHTML = s; return d.textContent || ''; }
+function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+function renderActions(container, actions) {
+  let productGrid = null;
+  function flushGrid() {
+    if (productGrid) { container.appendChild(productGrid); productGrid = null; }
+  }
+  for (const action of actions) {
+    if (action.type !== 'product_card') flushGrid();
+
+    if (action.type === 'quick_replies') {
+      const div = document.createElement('div');
+      div.className = 'cb-actions';
+      action.options.forEach(opt => {
+        const btn = document.createElement('button');
+        btn.className = 'cb-quick-btn';
+        btn.textContent = opt;
+        btn.onclick = () => sendChatMsg(opt);
+        div.appendChild(btn);
+      });
+      container.appendChild(div);
+    }
+    else if (action.type === 'product_card') {
+      if (!productGrid) { productGrid = document.createElement('div'); productGrid.className = 'cb-products-grid'; }
+      const card = document.createElement('div');
+      card.className = 'cb-product-card';
+      const imgHtml = action.image
+        ? '<img src="' + esc(action.image) + '" class="cb-product-img" alt="' + esc(action.product_name || '') + '">'
+        : '<div class="cb-product-img"></div>';
+      const name = esc(action.product_name || 'Product');
+      const desc = esc(stripHtml(action.description || ''));
+      const price = (action.price != null) ? Number(action.price).toFixed(2) : '0.00';
+      const pid = parseInt(action.product_id) || 0;
+      let html = '<div class="cb-product-row">' + imgHtml
+        + '<div class="cb-product-info"><div class="cb-product-name">' + name + '</div>'
+        + '<div class="cb-product-desc">' + desc + '</div></div>'
+        + '<div class="cb-product-price">\u00a3' + price + '</div>'
+        + '<button class="cb-add-btn" data-pid="' + pid + '">+ Add</button></div>';
+      if (action.variants && action.variants.length) {
+        html += '<div class="cb-variant-row" style="padding:4px 12px 8px;" data-pid="' + pid + '">';
+        action.variants.forEach(function(v) { html += '<button class="cb-variant-btn" data-vid="' + v.id + '">' + esc(v.name) + '</button>'; });
+        html += '</div>';
+      }
+      card.innerHTML = html;
+      const addBtn = card.querySelector('.cb-add-btn');
+      if (addBtn) addBtn.onclick = function() { addFromChat(pid, this.closest('.cb-product-card')); };
+      card.querySelectorAll('.cb-variant-btn').forEach(btn => {
+        btn.onclick = function() {
+          this.closest('.cb-variant-row').querySelectorAll('.cb-variant-btn').forEach(b => b.classList.remove('selected'));
+          this.classList.add('selected');
+        };
+      });
+      productGrid.appendChild(card);
+    }
+    else if (action.type === 'add_to_cart') {
+      const div = document.createElement('div');
+      div.className = 'cb-actions';
+      div.style.flexDirection = 'column';
+      let variantHtml = '';
+      if (action.variants && action.variants.length) {
+        variantHtml = '<div class="cb-variant-row" data-pid="' + action.product_id + '">'
+          + action.variants.map(v => '<button class="cb-variant-btn" data-vid="' + v.id + '">' + esc(v.name) + '</button>').join('')
+          + '</div>';
+      }
+      div.innerHTML = variantHtml
+        + '<div class="cb-qty-row">'
+        + '<span style="font-size:12px;color:#71717a;">Qty:</span>'
+        + '<button class="cb-qty-btn" onclick="chatQty(this,-1)">\u2212</button>'
+        + '<span class="cb-qty-val" data-qty="' + action.quantity + '">' + action.quantity + '</span>'
+        + '<button class="cb-qty-btn" onclick="chatQty(this,1)">+</button>'
+        + '<button class="cb-confirm-btn" data-pid="' + action.product_id + '">Confirm &amp; Add to Basket</button>'
+        + '</div>';
+      div.querySelectorAll('.cb-variant-btn').forEach(btn => {
+        btn.onclick = function() {
+          this.closest('.cb-variant-row').querySelectorAll('.cb-variant-btn').forEach(b => b.classList.remove('selected'));
+          this.classList.add('selected');
+        };
+      });
+      div.querySelector('.cb-confirm-btn').onclick = function() {
+        const qtyEl = this.closest('.cb-qty-row').querySelector('.cb-qty-val');
+        const qty = parseInt(qtyEl.dataset.qty);
+        const variantRow = this.closest('.cb-actions').querySelector('.cb-variant-row');
+        let vid = null;
+        if (variantRow) {
+          const sel = variantRow.querySelector('.cb-variant-btn.selected');
+          vid = sel ? parseInt(sel.dataset.vid) : null;
+        }
+        executeAction('add_to_cart', { product_id: action.product_id, quantity: qty, variant_id: vid });
+      };
+      container.appendChild(div);
+    }
+    else if (action.type === 'show_slots') {
+      const div = document.createElement('div');
+      div.className = 'cb-slot-picker';
+      const today = new Date();
+      const minDate = today.toISOString().split('T')[0];
+      const maxDate = new Date(today.getTime() + 30*86400000).toISOString().split('T')[0];
+      div.innerHTML = '<input type="date" class="cb-date-input" min="' + minDate + '" max="' + maxDate + '" onchange="loadSlots(this.value, this.parentElement)">'
+        + '<div class="cb-slot-grid"></div>';
+      container.appendChild(div);
+    }
+    else if (action.type === 'slot_list') {
+      const div = document.createElement('div');
+      div.className = 'cb-slot-grid';
+      action.slots.forEach(s => {
+        const btn = document.createElement('button');
+        btn.className = 'cb-slot-btn';
+        btn.innerHTML = esc(s.time) + '<span class="cb-slot-avail">' + s.remaining + ' left</span>';
+        btn.onclick = () => reserveSlot(action.date, s.time);
+        div.appendChild(btn);
+      });
+      container.appendChild(div);
+    }
+    else if (action.type === 'fulfillment_choice') {
+      const div = document.createElement('div');
+      div.className = 'cb-fulfillment-row';
+      div.innerHTML = '<button class="cb-fulfillment-btn" onclick="sendChatMsg(\'I will pick up\')">'
+        + '<span class="cb-fulfillment-icon">\ud83c\udfea</span>Pickup from Atelier</button>'
+        + '<button class="cb-fulfillment-btn" onclick="sendChatMsg(\'I want delivery\')">'
+        + '<span class="cb-fulfillment-icon">\ud83d\ude9a</span>Home Delivery</button>';
+      container.appendChild(div);
+    }
+    else if (action.type === 'show_products') {
+      sendChatMsg('Browse the menu');
+    }
+    else if (action.type === 'go_to_cart') {
+      const btn = document.createElement('button');
+      btn.className = 'cb-nav-btn';
+      btn.textContent = '\ud83d\uded2 View Basket';
+      btn.onclick = () => window.location.href = '/cart';
+      container.appendChild(btn);
+    }
+    else if (action.type === 'go_to_checkout') {
+      const btn = document.createElement('button');
+      btn.className = 'cb-nav-btn';
+      btn.textContent = '\u2728 Proceed to Checkout';
+      btn.onclick = () => window.location.href = '/checkout';
+      container.appendChild(btn);
+    }
+    else if (action.type === 'cart_summary') {
+      const div = document.createElement('div');
+      div.className = 'cb-products-grid';
+      action.items.forEach(item => {
+        div.innerHTML += '<div class="cb-product-card"><div class="cb-product-row">'
+          + '<div class="cb-product-info"><div class="cb-product-name">' + item.quantity + '\u00d7 ' + esc(item.name) + '</div></div>'
+          + '<div class="cb-product-price">\u00a3' + (item.price * item.quantity).toFixed(2) + '</div>'
+          + '</div></div>';
+      });
+      container.appendChild(div);
+    }
+  }
+  flushGrid();
+}
+
+function chatQty(btn, delta) {
+  const row = btn.closest('.cb-qty-row');
+  const el = row.querySelector('.cb-qty-val');
+  let val = Math.max(1, Math.min(20, parseInt(el.dataset.qty) + delta));
+  el.dataset.qty = val;
+  el.textContent = val;
+}
+
+function addFromChat(productId, cardEl) {
+  const variantRow = cardEl.querySelector('.cb-variant-row');
+  let vid = null;
+  if (variantRow) {
+    const sel = variantRow.querySelector('.cb-variant-btn.selected');
+    vid = sel ? parseInt(sel.dataset.vid) : null;
+  }
+  executeAction('add_to_cart', { product_id: productId, quantity: 1, variant_id: vid });
+}
+
+function processGptActions(container, actions) {
+  // Separate auto-executable actions from widget-based ones
+  const navAction = actions.find(a => a.type === 'go_to_checkout' || a.type === 'go_to_cart');
+  const addActions = actions.filter(a => a.type === 'add_to_cart');
+  const widgetActions = actions.filter(a =>
+    a.type !== 'add_to_cart' && a.type !== 'go_to_checkout' && a.type !== 'go_to_cart'
+  );
+
+  // Render widget-based actions (show_slots, quick_replies, product_card, etc.)
+  if (widgetActions.length) {
+    renderActions(container, widgetActions);
+  }
+
+  // Auto-execute add-to-cart actions silently (GPT already confirmed in its reply)
+  let chain = Promise.resolve();
+  for (const action of addActions) {
+    chain = chain.then(() =>
+      fetch('/api/chatbot/action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'add_to_cart', product_id: action.product_id, quantity: action.quantity || 1, variant_id: null })
+      }).then(r => r.json()).then(data => {
+        if (data.cart_count !== undefined) updateCartBadge(data.cart_count);
+      }).catch(() => {})
+    );
+  }
+
+  // Navigate after all cart operations complete
+  if (navAction) {
+    chain.then(() => {
+      const url = navAction.type === 'go_to_checkout' ? '/checkout' : '/cart';
+      const navBubble = document.createElement('div');
+      navBubble.className = 'cb-typing';
+      navBubble.textContent = 'Taking you there now...';
+      container.appendChild(navBubble);
+      container.scrollTop = container.scrollHeight;
+      setTimeout(() => { window.location.href = url; }, 1200);
+    });
+  }
+}
+
+function executeAction(action, params) {
+  const container = document.getElementById('chatbot-messages');
+  const typing = document.createElement('div');
+  typing.className = 'cb-typing';
+  typing.textContent = 'Processing...';
+  container.appendChild(typing);
+  container.scrollTop = container.scrollHeight;
+
+  fetch('/api/chatbot/action', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action, ...params })
+  })
+  .then(r => r.json())
+  .then(data => {
+    typing.remove();
+    if (data.reply) {
+      chatHistory.push({role: 'assistant', content: data.reply});
+      const bubble = document.createElement('div');
+      bubble.className = 'cb-msg-bot';
+      bubble.textContent = data.reply;
+      container.appendChild(bubble);
+    }
+    if (data.actions && data.actions.length) renderActions(container, data.actions);
+    if (data.cart_count !== undefined) updateCartBadge(data.cart_count);
+    container.scrollTop = container.scrollHeight;
+    _saveChatState(data.actions || null);
+  })
+  .catch(() => {
+    typing.remove();
+    const err = document.createElement('div');
+    err.className = 'cb-error';
+    err.textContent = 'Pardon, something went wrong.';
+    container.appendChild(err);
+  });
+}
+
+function loadSlots(dateStr, pickerEl) {
+  const grid = pickerEl.querySelector('.cb-slot-grid');
+  grid.innerHTML = '<div class="cb-typing">Checking availability...</div>';
+  executeAction('check_slots', { date: dateStr });
+}
+
+function reserveSlot(date, time) {
+  executeAction('reserve_slot', { date, time });
+}
+
+function updateCartBadge(count) {
+  document.querySelectorAll('.cart-count, #cart-count, [data-cart-count]').forEach(el => {
+    el.textContent = count;
+    el.style.display = count > 0 ? '' : 'none';
+  });
+}
+
+// Restore previous chat on page load
+(function() {
+  _restoreChatMessages();
+  if (sessionStorage.getItem('cb_open') === '1') {
+    const w = document.getElementById('chatbot-window');
+    const t = document.getElementById('chatbot-toggle');
+    if (w && t) { w.style.display = 'flex'; t.style.display = 'none'; }
+  }
+})();
+</script>
+{% endif %}

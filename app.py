@@ -1,11 +1,14 @@
 import os
+import json
+import logging
+import re
 import uuid
 import requests
 import stripe
 import smtplib
 from email.message import EmailMessage
 from urllib.parse import urlparse
-from flask import Flask, render_template, render_template_string, request, jsonify, redirect, url_for, flash, send_from_directory, session
+from flask import Flask, render_template, render_template_string, request, jsonify, redirect, url_for, flash, send_from_directory, session, make_response
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 from flask_ckeditor import CKEditor
 from flask_limiter import Limiter
@@ -20,7 +23,7 @@ from datetime import datetime, date, timedelta, timezone
 from sqlalchemy import func
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(override=True)
 
 def get_bool_env(name, default=False):
     value = os.getenv(name)
@@ -133,7 +136,12 @@ def render_invoice_template(order, settings, currency_symbol, invoice_number, in
     template_html = None
     if settings and settings.invoice_template_path:
         fs_path = os.path.join(app.root_path, settings.invoice_template_path.lstrip('/'))
-        if os.path.exists(fs_path):
+        # Prevent path traversal: ensure resolved path stays within uploads
+        upload_root = os.path.abspath(os.path.join(app.root_path, app.config['UPLOAD_FOLDER']))
+        if not os.path.abspath(fs_path).startswith(upload_root):
+            app.logger.warning('Invoice template path traversal attempt blocked: %s', settings.invoice_template_path)
+            fs_path = None
+        if fs_path and os.path.exists(fs_path):
             with open(fs_path, 'r', encoding='utf-8') as f:
                 template_html = f.read()
 
@@ -146,8 +154,12 @@ def render_invoice_template(order, settings, currency_symbol, invoice_number, in
     }
 
     if template_html:
-        # Allow custom uploaded template with same context as defaults
-        return render_template_string(template_html, **context)
+        # Sanitize uploaded template: strip Jinja2 execution tags to prevent SSTI
+        if re.search(r'\{%.*%\}', template_html):
+            app.logger.warning('Invoice template contains forbidden Jinja2 tags, falling back to default')
+            template_html = None
+        else:
+            return render_template_string(template_html, **context)
 
     return render_template(
         'emails/invoice.html' if for_email else 'admin/order_invoice.html',
@@ -156,6 +168,12 @@ def render_invoice_template(order, settings, currency_symbol, invoice_number, in
 
 app = Flask(__name__)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
+
+# Configure logging
+if os.getenv('FLASK_ENV') == 'production':
+    logging.basicConfig(level=logging.WARNING)
+else:
+    logging.basicConfig(level=logging.INFO)
 
 # Ensure instance folder exists for SQLite and uploads
 os.makedirs(app.instance_path, exist_ok=True)
@@ -248,7 +266,8 @@ COUNTRY_TO_CURRENCY = {
 # Import db from models and initialize with app
 from models import (db, User, Customer, Product, ProductVariant, ProductImage, HeroSection, MaisonSection, 
                     Booking, SiteSettings, AvailableTimeSlot, BlockedDate, BlockedTimeSlot, BookingSettings,
-                    Cart, CartItem, Order, OrderItem, NavigationItem, Discount, DeliveryZone)
+                    Cart, CartItem, Order, OrderItem, NavigationItem, Discount, DeliveryZone,
+                    AuditLog, WebhookEvent)
 
 db.init_app(app)
 ckeditor = CKEditor(app)
@@ -271,6 +290,23 @@ os.makedirs(os.path.join(app.config['UPLOAD_FOLDER'], 'products'), exist_ok=True
 os.makedirs(os.path.join(app.config['UPLOAD_FOLDER'], 'hero'), exist_ok=True)
 os.makedirs(os.path.join(app.config['UPLOAD_FOLDER'], 'maison'), exist_ok=True)
 os.makedirs(os.path.join(app.config['UPLOAD_FOLDER'], 'invoices'), exist_ok=True)
+
+# Ensure all tables exist on every app load (prevents table loss from debug reloader)
+with app.app_context():
+    db.create_all()
+
+def audit_log(action, target_type=None, target_id=None, details=None):
+    """Record an admin action in the audit log."""
+    entry = AuditLog(
+        user_id=current_user.id if current_user and current_user.is_authenticated else None,
+        user_email=current_user.email if current_user and current_user.is_authenticated else None,
+        action=action,
+        target_type=target_type,
+        target_id=target_id,
+        details=details,
+        ip_address=request.remote_addr if request else None,
+    )
+    db.session.add(entry)
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
@@ -511,6 +547,20 @@ def handle_csrf_error(error):
     flash('Your session has expired. Please try again.', 'error')
     return redirect(request.referrer or url_for('index'))
 
+@app.errorhandler(404)
+def page_not_found(error):
+    if request.accept_mimetypes.best == 'application/json' or request.is_json:
+        return jsonify({'error': 'Not found'}), 404
+    settings = SiteSettings.query.first()
+    return render_template('404.html', settings=settings), 404
+
+@app.errorhandler(500)
+def internal_server_error(error):
+    app.logger.error('Internal server error: %s', error)
+    if request.accept_mimetypes.best == 'application/json' or request.is_json:
+        return jsonify({'error': 'Internal server error'}), 500
+    return render_template('500.html'), 500
+
 # Public routes
 @app.route('/')
 def index():
@@ -532,6 +582,781 @@ def index():
         'fade_ms': settings.entrance_fade_ms if settings and settings.entrance_fade_ms else 800,
     }
     return render_template('index.html', hero=hero, products=products, maison=maison, settings=settings, nav_items=nav_items, currency_symbol=currency_symbol, entrance_config=entrance_config)
+
+@csrf.exempt
+@app.route('/api/chatbot', methods=['POST'])
+def  api_chatbot():
+    data = request.get_json()
+    user_msg = (data.get('message', '') if data else '').strip()
+    history = data.get('history', []) if data else []
+    if not user_msg:
+        return jsonify({'reply': 'Please type a message.'})
+
+    def strip_html(text):
+        """Strip HTML tags from text for clean display."""
+        if not text:
+            return ''
+        return re.sub(r'<[^>]+>', '', text).strip()
+
+    # --- Build rich context from database ---
+    products = Product.query.filter_by(is_active=True).order_by(Product.order).all()
+    settings = SiteSettings.query.first()
+    delivery_zones = DeliveryZone.query.filter_by(is_active=True).order_by(DeliveryZone.order).all()
+    time_slots = AvailableTimeSlot.query.filter_by(is_active=True).all()
+    booking_settings = BookingSettings.query.first()
+    active_discounts = Discount.query.filter(
+        Discount.is_active == True,
+        (Discount.usage_limit.is_(None)) | (Discount.usage_count < Discount.usage_limit)
+    ).all()
+
+    address = (settings.address if settings and settings.address
+               else 'Astbury Close, WV1 2DD, Wolverhampton')
+    email = (settings.contact_email if settings and settings.contact_email
+             else 'clients@ateliergourmandbyoc.co.uk')
+    phone = settings.phone if settings and settings.phone else None
+    instagram = settings.instagram if settings and settings.instagram else None
+    whatsapp = settings.whatsapp_number if settings and settings.whatsapp_number else None
+    currency = '£'
+
+    # Product details with descriptions
+    product_details = []
+    for p in products[:20]:
+        desc = p.short_description or ''
+        variants_str = ''
+        if p.variants:
+            variants_str = ' | Variants: ' + ', '.join(
+                v.name + (f' (+{currency}{v.price_modifier:.2f})' if v.price_modifier else '')
+                for v in p.variants[:5]
+            )
+        product_details.append(
+            f"• {p.name} — {currency}{p.price:.2f}"
+            + (f" — {desc}" if desc else '')
+            + variants_str
+            + (f" [{'In stock' if p.stock_quantity > 0 else 'Made to order'}]" if p.track_inventory else '')
+        )
+    product_catalog = '\n'.join(product_details)
+    product_names_prices = ', '.join(
+        f"{p.name} ({currency}{p.price:.2f})" for p in products[:20]
+    )
+
+    # Delivery info
+    delivery_info = ''
+    if settings and settings.delivery_enabled and delivery_zones:
+        zone_list = '; '.join(
+            f"{z.name} ({z.postcodes}) — {currency}{z.delivery_fee:.2f}"
+            + (f", min order {currency}{z.min_order_amount:.2f}" if z.min_order_amount else '')
+            + (f", {z.estimated_delivery_time}" if z.estimated_delivery_time else '')
+            for z in delivery_zones
+        )
+        free_threshold = settings.free_delivery_threshold
+        delivery_info = (
+            f"Delivery zones: {zone_list}."
+            + (f" Free delivery on orders over {currency}{free_threshold:.2f}." if free_threshold else '')
+        )
+    else:
+        delivery_info = "We currently offer collection only. Pickup by appointment from our atelier."
+
+    # Booking / pickup info
+    slot_times = ', '.join(sorted(ts.time_slot for ts in time_slots)) if time_slots else 'by appointment'
+    advance_days = booking_settings.advance_booking_days if booking_settings else 30
+    min_hours = booking_settings.min_advance_hours if booking_settings else 48
+    booking_info = (
+        f"Pickup slots: {slot_times}. "
+        f"Book up to {advance_days} days ahead, at least {min_hours} hours in advance."
+    )
+
+    # Active promotions
+    promo_info = ''
+    if active_discounts:
+        promos = []
+        for d in active_discounts[:3]:
+            val = (f"{int(d.discount_value)}%" if d.discount_type == 'percentage'
+                   else f"{currency}{d.discount_value:.2f}")
+            promos.append(f"{d.code}: {val} off" + (f" (min {currency}{d.min_order_amount:.2f})" if d.min_order_amount else ''))
+        promo_info = "Current promotions: " + ', '.join(promos) + '.'
+
+    # Contact block
+    contact_lines = [f"Email: {email}"]
+    if phone:
+        contact_lines.append(f"Phone: {phone}")
+    if whatsapp:
+        contact_lines.append(f"WhatsApp: {whatsapp}")
+    if instagram:
+        contact_lines.append(f"Instagram: {instagram}")
+    contact_block = ' | '.join(contact_lines)
+
+    # --- OpenAI path (with conversation memory + function-calling for actions) ---
+    openai_key = os.environ.get('OPENAI_API_KEY', '')
+    if openai_key:
+        try:
+            import openai
+            client = openai.OpenAI(api_key=openai_key)
+
+            # Build product list for AI
+            product_json_list = json.dumps([
+                {'id': p.id, 'name': p.name, 'price': p.price,
+                 'description': strip_html(p.short_description),
+                 'variants': [{'id': v.id, 'name': v.name} for v in (p.variants or [])]}
+                for p in products[:20]
+            ])
+
+            # Use admin-configured personality or default
+            personality_text = (settings.chatbot_personality if settings and settings.chatbot_personality else
+                "You are the virtual concierge of Atelier Gourmand by OC, an artisan French pâtisserie "
+                "based in Wolverhampton, England. You embody the elegance and warmth of a Parisian "
+                "maison — knowledgeable, gracious, and passionate about the craft of pâtisserie.\n\n"
+                "PERSONALITY & TONE:\n"
+                "• Speak with refined warmth — mix English with occasional French touches.\n"
+                "• Be concise yet luxurious (3-5 sentences max).\n"
+                "• Use sensory language when describing products.")
+
+            system = (
+                f"{personality_text}\n\n"
+                f"BUSINESS INFORMATION:\n"
+                f"• Address: {address}\n"
+                f"• Contact: {contact_block}\n"
+                f"• {delivery_info}\n"
+                f"• {booking_info}\n"
+                f"• {promo_info}\n\n"
+                f"CURRENT MENU (JSON):\n{product_json_list}\n\n"
+                "ACTION CAPABILITIES — you can help customers take actions. When appropriate, "
+                "include an 'actions' array in your response JSON. You can include MULTIPLE actions "
+                "in one response to fulfil multi-step requests (e.g. add to cart AND go to checkout).\n"
+                "Action types:\n"
+                "1. 'add_to_cart' — add a product. Include product_id (integer from menu), quantity (integer).\n"
+                "2. 'show_products' — show browsable product cards.\n"
+                "3. 'show_slots' — show the pickup slot booking calendar.\n"
+                "4. 'go_to_checkout' — navigate customer to checkout.\n"
+                "5. 'go_to_cart' — navigate customer to their basket.\n"
+                "6. 'quick_replies' — show quick-reply buttons. Include 'options' array of strings.\n\n"
+                "MULTI-STEP REQUESTS — When the customer says something like 'add 2 croissants and "
+                "go to checkout', you MUST return multiple actions in one response, e.g.:\n"
+                '{"reply": "...", "actions": [{"type": "add_to_cart", "product_id": 3, "quantity": 2}, '
+                '{"type": "go_to_checkout"}]}\n\n'
+                "RESPONSE FORMAT — You MUST reply with ONLY valid JSON and nothing else. "
+                "No markdown, no code fences, no explanation before or after — just the raw JSON object:\n"
+                '{"reply": "your message", "actions": [{"type": "...", ...}]}\n'
+                "The actions array is optional — omit it for purely conversational responses.\n"
+                "NEVER wrap your response in ```json``` code blocks. NEVER add text outside the JSON object.\n\n"
+                "RULES:\n"
+                "• Never invent products or prices not in the menu.\n"
+                "• Match product names flexibly — 'croissant' should match 'Croissant au Beurre', etc.\n"
+                "• When a customer asks to add something, just DO IT — don't ask for confirmation "
+                "unless the product name is ambiguous (multiple matches). Include the add_to_cart action directly.\n"
+                "• Extract quantity from the message (e.g. 'add 2 X' → quantity: 2). Default to 1.\n"
+                "• If the customer asks to add AND checkout/book/view cart in one message, include ALL relevant actions.\n"
+                "• For allergens/ingredients: direct them to contact us.\n"
+                "• If unsure, gracefully direct them to contact us."
+            )
+            messages = [{'role': 'system', 'content': system}]
+            for h in history[-20:]:
+                role = h.get('role', 'user')
+                if role in ('user', 'assistant'):
+                    messages.append({'role': role, 'content': h.get('content', '')[:500]})
+            messages.append({'role': 'user', 'content': user_msg[:1000]})
+
+            response = client.chat.completions.create(
+                model='gpt-4o',
+                messages=messages,
+                max_tokens=600,
+                temperature=0.7,
+                response_format={"type": "json_object"},
+            )
+            ai_text = response.choices[0].message.content.strip()
+            # Try parsing as JSON (AI was instructed to return JSON)
+            ai_data = None
+            # Attempt 1: direct parse
+            try:
+                ai_data = json.loads(ai_text)
+            except (json.JSONDecodeError, TypeError):
+                pass
+            # Attempt 2: extract from ```json ... ``` code block
+            if ai_data is None:
+                m = re.search(r'```(?:json)?\s*\n?({.*?})\s*\n?```', ai_text, re.DOTALL)
+                if m:
+                    try:
+                        ai_data = json.loads(m.group(1))
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+            # Attempt 3: find first { ... } in the text
+            if ai_data is None:
+                m = re.search(r'(\{[^{}]*"reply"[^{}]*\})', ai_text, re.DOTALL)
+                if not m:
+                    m = re.search(r'(\{.*\})', ai_text, re.DOTALL)
+                if m:
+                    try:
+                        ai_data = json.loads(m.group(1))
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+            if isinstance(ai_data, dict) and 'reply' in ai_data:
+                # Enrich: if GPT-4o didn't return actions, detect intents and add them
+                ai_actions = ai_data.get('actions', [])
+                if not isinstance(ai_actions, list):
+                    ai_actions = []
+                ai_action_types = {a.get('type') for a in ai_actions if isinstance(a, dict)}
+
+                # Detect intents from the user message and add missing actions
+                msg_lower = user_msg.lower()
+
+                # Add-to-cart: if user asked to add but GPT didn't include the action
+                if 'add_to_cart' not in ai_action_types:
+                    add_words = ['add', 'basket', 'cart', 'i want', "i'd like", 'give me', 'can i get', 'order']
+                    if any(w in msg_lower for w in add_words):
+                        for p in products:
+                            name_lower = p.name.lower()
+                            if name_lower in msg_lower or any(
+                                w in msg_lower for w in name_lower.split() if len(w) > 3
+                            ):
+                                qty = 1
+                                qty_m = re.search(r'(\d+)\s*(?:of|x|×|\*)', msg_lower)
+                                if qty_m:
+                                    qty = min(int(qty_m.group(1)), 20)
+                                else:
+                                    qty_m = re.search(r'\b(\d+)\b', msg_lower)
+                                    if qty_m and 0 < int(qty_m.group(1)) <= 20:
+                                        qty = int(qty_m.group(1))
+                                variant_options = [{'id': v.id, 'name': v.name} for v in p.variants] if p.variants else []
+                                ai_actions.append({
+                                    'type': 'add_to_cart',
+                                    'product_id': p.id,
+                                    'product_name': p.name,
+                                    'price': p.price,
+                                    'quantity': qty,
+                                    'variants': variant_options,
+                                    'needs_confirmation': True
+                                })
+                                break
+
+                # Show slots: if user mentioned booking/slot but GPT didn't include it
+                if 'show_slots' not in ai_action_types:
+                    if any(w in msg_lower for w in ['book', 'slot', 'reserv', 'appointment', 'pickup', 'collect']):
+                        ai_actions.append({'type': 'show_slots'})
+
+                # Checkout: if user mentioned checkout but GPT didn't include it
+                if 'go_to_checkout' not in ai_action_types:
+                    if any(w in msg_lower for w in ['checkout', 'pay', 'proceed', 'finish order']):
+                        ai_actions.append({'type': 'go_to_checkout'})
+
+                # Cart: if user mentioned cart/basket viewing
+                if 'go_to_cart' not in ai_action_types:
+                    if any(w in msg_lower for w in ['view cart', 'view basket', 'my cart', 'my basket', 'see cart']):
+                        ai_actions.append({'type': 'go_to_cart'})
+
+                if ai_actions:
+                    ai_data['actions'] = ai_actions
+                return jsonify(ai_data)
+            # If all parsing failed, use the raw text (strip any code fences)
+            clean_text = re.sub(r'```(?:json)?\s*\n?.*?```', '', ai_text, flags=re.DOTALL).strip()
+            return jsonify({'reply': clean_text or ai_text})
+        except Exception as e:
+            app.logger.error(f"OpenAI chatbot error: {e}")
+
+    # --- Enhanced fallback with ACTIONS (supports multi-intent) ---
+    msg_lower = user_msg.lower()
+    actions = []
+    reply_parts = []
+
+    # --- Intent: Fulfillment choice (pickup or delivery) ---
+    pickup_intent = any(w in msg_lower for w in ['pick up', 'pickup', 'collect', 'collection', 'i will pick'])
+    delivery_intent = any(w in msg_lower for w in ['deliver', 'delivery', 'ship', 'send to', 'to my address', 'want delivery', 'home delivery'])
+
+    if pickup_intent and session.get('pickup_confirmed'):
+        session['fulfillment_type'] = 'pickup'
+        reply_parts.append("Parfait! Collection it is. 🏪 We'll have your order ready for pickup.")
+
+    elif delivery_intent and session.get('pickup_confirmed'):
+        session['fulfillment_type'] = 'delivery'
+        reply_parts.append("Très bien! Home delivery selected. 🚚 Your delivery address will be collected at checkout.")
+
+    # --- Intent: Add to cart ---
+    add_intent = any(w in msg_lower for w in [
+        'add to cart', 'add to basket', 'i want', "i'd like", 'i would like',
+        'give me', 'can i get', 'can i have', 'put in cart', 'order the',
+        'buy the', 'get me', 'please add', 'add'
+    ])
+
+    # Find ALL products mentioned
+    matching_products = []
+    used_positions = set()
+    for p in products:
+        name_lower = p.name.lower()
+        pos = msg_lower.find(name_lower)
+        if pos >= 0 and pos not in used_positions:
+            matching_products.append(p)
+            used_positions.add(pos)
+            continue
+        # Match significant words (>3 chars) from product name
+        for word in name_lower.split():
+            if len(word) > 3 and word in msg_lower:
+                wpos = msg_lower.find(word)
+                if wpos not in used_positions:
+                    matching_products.append(p)
+                    used_positions.add(wpos)
+                break
+
+    # Extract quantity from message
+    quantity = 1
+    qty_match = re.search(r'(\d+)\s*(of|x|×|\*)', msg_lower)
+    if qty_match:
+        quantity = min(int(qty_match.group(1)), 20)
+    else:
+        qty_match = re.search(r'\b(\d+)\b', msg_lower)
+        if qty_match and int(qty_match.group(1)) <= 20:
+            num = int(qty_match.group(1))
+            if num > 0 and not any(w in msg_lower for w in ['price', 'cost', '£', 'pound']):
+                quantity = num
+
+    if add_intent and matching_products:
+        for p in matching_products:
+            variant_options = []
+            if p.variants:
+                variant_options = [{'id': v.id, 'name': v.name} for v in p.variants]
+            actions.append({
+                'type': 'add_to_cart',
+                'product_id': p.id,
+                'product_name': p.name,
+                'price': p.price,
+                'quantity': quantity,
+                'variants': variant_options,
+                'needs_confirmation': True
+            })
+            variant_note = ' Please select your preferred option below.' if variant_options else ''
+            reply_parts.append(
+                f"Adding {quantity}× {p.name} ({currency}{p.price:.2f} each) to your basket.{variant_note}"
+            )
+    elif matching_products and not add_intent:
+        # Show product cards for mentioned products
+        for p in matching_products[:3]:
+            desc = strip_html(p.short_description) or strip_html(p.full_description) or 'one of our signature creations'
+            variant_options = [{'id': v.id, 'name': v.name} for v in p.variants] if p.variants else []
+            actions.append({
+                'type': 'product_card',
+                'product_id': p.id,
+                'product_name': p.name,
+                'price': p.price,
+                'image': p.image_url,
+                'description': desc,
+                'variants': variant_options,
+                'slug': p.slug
+            })
+        p = matching_products[0]
+        desc = strip_html(p.short_description) or 'one of our signature creations'
+        price_str = f"{currency}{p.price:.2f}" if p.price else ''
+        reply_parts.append(
+            f"Ah, our {p.name} — {desc}. "
+            f"{'Priced at ' + price_str + '. ' if price_str else ''}"
+            f"Would you like to add it to your basket?"
+        )
+
+    # --- Intent: Browse products / show menu ---
+    if not matching_products and any(w in msg_lower for w in [
+            'menu', 'product', 'what do you', 'sell', 'offer', 'range',
+            'collection', "what's available", 'cake', 'pastry',
+            'patisserie', 'tart', 'entremet', 'show me', 'browse']):
+        for p in products[:6]:
+            actions.append({
+                'type': 'product_card',
+                'product_id': p.id,
+                'product_name': p.name,
+                'price': p.price or 0,
+                'image': p.image_url or '',
+                'description': strip_html(p.short_description),
+                'slug': p.slug or '',
+                'variants': [{'id': v.id, 'name': v.name} for v in p.variants] if p.variants else []
+            })
+        reply_parts.append(
+            "Here is our current collection — each piece handcrafted with love. "
+            "Tap any item to add it to your basket! 🥐"
+        )
+
+    # --- Intent: Book a slot / check availability ---
+    if any(w in msg_lower for w in ['book', 'reserv', 'appointment', 'slot',
+                                     'available slot', 'time slot']):
+        actions.append({'type': 'show_slots'})
+        reply_parts.append(
+            f"Let me show you our available pickup slots. "
+            f"You may book up to {advance_days} days ahead (minimum {min_hours}h notice)."
+        )
+
+    # --- Intent: View cart ---
+    if any(w in msg_lower for w in ['view cart', 'my cart', 'my basket', 'what\'s in my cart',
+                                     'show cart', 'show basket', 'view basket', 'see cart']):
+        cart_items_data = []
+        if 'cart_id' in session:
+            cart = db.session.get(Cart, session['cart_id'])
+            if cart and cart.items:
+                for item in cart.items:
+                    prod = db.session.get(Product, item.product_id)
+                    if prod:
+                        cart_items_data.append({
+                            'name': prod.name,
+                            'quantity': item.quantity,
+                            'price': item.price_at_add or prod.price,
+                            'item_id': item.id
+                        })
+        if cart_items_data:
+            total = sum(i['price'] * i['quantity'] for i in cart_items_data)
+            items_text = ', '.join(f"{i['quantity']}× {i['name']}" for i in cart_items_data)
+            actions.extend([
+                {'type': 'cart_summary', 'items': cart_items_data, 'total': total},
+                {'type': 'go_to_cart'},
+                {'type': 'go_to_checkout'}
+            ])
+            reply_parts.append(f"Your basket: {items_text}. Total: {currency}{total:.2f}.")
+        else:
+            actions.append({'type': 'show_products'})
+            reply_parts.append("Your basket is currently empty.")
+
+    # --- Intent: Go to checkout ---
+    checkout_intent = any(w in msg_lower for w in [
+        'checkout', 'pay', 'proceed', 'ready to order', 'finish order',
+        'complete order', 'place order'])
+    if checkout_intent:
+        has_cart = False
+        if 'cart_id' in session:
+            cart = db.session.get(Cart, session['cart_id'])
+            if cart and cart.items:
+                has_cart = True
+        if has_cart:
+            actions.append({'type': 'go_to_checkout'})
+            reply_parts.append("Taking you to checkout now! ✨")
+        elif not any(a.get('type') == 'add_to_cart' for a in actions):
+            # Only say empty if we're not already adding items
+            actions.append({'type': 'show_products'})
+            reply_parts.append("Your basket is empty — let me show you our collection first! 🥐")
+        else:
+            # We're adding items AND they want checkout — add checkout action too
+            actions.append({'type': 'go_to_checkout'})
+            reply_parts.append("Then straight to checkout! ✨")
+
+    # If we matched any intents, return the combined response
+    if reply_parts:
+        if not actions:
+            actions.append({'type': 'quick_replies', 'options': ['Browse the menu', 'View my basket', 'Checkout']})
+        return jsonify({'reply': ' '.join(reply_parts), 'actions': actions})
+
+    # --- Intent: Pricing ---
+    if any(w in msg_lower for w in ['price', 'cost', 'how much', 'expensive', 'cheap', 'budget', 'afford']):
+        cheapest = min(products, key=lambda p: p.price) if products else None
+        dearest = max(products, key=lambda p: p.price) if products else None
+        if cheapest and dearest:
+            reply = (
+                f"Our pâtisserie range from {currency}{cheapest.price:.2f} to {currency}{dearest.price:.2f}. "
+                f"Each creation is handcrafted using the finest ingredients. "
+                f"For bespoke orders, pricing depends on design — do contact us to discuss."
+            )
+        else:
+            reply = f"Please browse our menu above to see current pricing."
+        product_cards = [{
+            'type': 'product_card',
+            'product_id': p.id,
+            'product_name': p.name,
+            'price': p.price or 0,
+            'image': p.image_url or '',
+            'description': strip_html(p.short_description),
+            'slug': p.slug or '',
+            'variants': [{'id': v.id, 'name': v.name} for v in p.variants] if p.variants else []
+        } for p in products[:6]]
+        return jsonify({'reply': reply, 'actions': product_cards})
+
+    # --- Remaining keyword responses (no actions) ---
+    if any(w in msg_lower for w in ['custom', 'bespoke', 'special order', 'wedding', 'birthday cake', 'occasion', 'personalise', 'personalize']):
+        reply = (
+            f"Mais oui, we adore creating bespoke pâtisserie for special occasions! "
+            f"Please email us at {email} with your vision, the occasion, number of guests, "
+            f"and your preferred date — we will be delighted to discuss. ✨"
+        )
+    elif any(w in msg_lower for w in ['allerg', 'vegan', 'gluten', 'nut', 'dairy', 'egg', 'ingredient', 'dietary', 'intoleran']):
+        reply = (
+            f"We take dietary needs very seriously. Please contact us directly at {email} "
+            f"so we can discuss your needs personally and ensure your experience is parfait. 🌿"
+        )
+    elif any(w in msg_lower for w in ['deliver', 'shipping', 'postcode', 'post code', 'zone']):
+        if settings and settings.delivery_enabled and delivery_zones:
+            zones_text = ' | '.join(
+                f"{z.name}: {z.postcodes} ({currency}{z.delivery_fee:.2f})" for z in delivery_zones[:5]
+            )
+            free_note = ''
+            if settings.free_delivery_threshold:
+                free_note = f" Orders over {currency}{settings.free_delivery_threshold:.2f} qualify for free delivery."
+            reply = f"Bien sûr! We deliver to: {zones_text}.{free_note} 🚗"
+        else:
+            reply = (
+                f"We currently offer collection from our atelier at {address}. "
+                f"Book your preferred pickup slot during checkout."
+            )
+    elif any(w in msg_lower for w in ['hour', 'open', 'close', 'when', 'schedule']):
+        reply = (
+            f"Our atelier operates by appointment. Available pickup slots: {slot_times}. "
+            f"Book up to {advance_days} days ahead (minimum {min_hours}h notice). 📍 {address}"
+        )
+    elif any(w in msg_lower for w in ['order', 'buy', 'purchase', 'how to']):
+        actions = [{'type': 'show_products'}]
+        reply = (
+            f"Ordering is a pleasure! Browse our collection, add items to your basket, "
+            f"and select a pickup slot at checkout. Let me show you what we have! 🎂"
+        )
+        return jsonify({'reply': reply, 'actions': actions})
+    elif any(w in msg_lower for w in ['discount', 'promo', 'coupon', 'code', 'deal', 'sale']):
+        if promo_info:
+            reply = f"Magnifique! {promo_info} Enter the code in your cart. 🎉"
+        else:
+            reply = (
+                f"No active promotions at the moment. Follow us"
+                + (f" on Instagram ({instagram})" if instagram else '')
+                + f" for exclusive offers! ✨"
+            )
+    elif any(w in msg_lower for w in ['contact', 'email', 'phone', 'reach', 'speak', 'talk']):
+        reply = f"You can reach us at {contact_block}. Our atelier: {address}. À bientôt! ✉️"
+    elif any(w in msg_lower for w in ['address', 'location', 'where', 'find you', 'directions']):
+        reply = f"Our atelier is at {address}. Book a pickup slot so everything is freshly prepared! 📍"
+    elif any(w in msg_lower for w in ['seasonal', 'new', 'latest', 'upcoming', 'limited']):
+        upcoming = [p for p in products if p.product_status == 'upcoming']
+        if upcoming:
+            reply = f"Coming soon: {', '.join(p.name for p in upcoming[:5])}! Follow us for updates. 🌸"
+        else:
+            reply = f"We refresh our collection seasonally. Stay tuned for new créations! 🌿"
+    elif any(w in msg_lower for w in ['hello', 'hi', 'hey', 'bonjour', 'good morning', 'good afternoon', 'good evening']):
+        actions = [{'type': 'quick_replies', 'options': [
+            'Browse the menu', 'Book a pickup slot', 'View my basket', 'Delivery info'
+        ]}]
+        reply = (
+            f"Bonjour and welcome to Atelier Gourmand by OC! 🥐 "
+            f"I can help you browse our collection, add items to your basket, "
+            f"book a pickup slot, or answer any questions. What would you like to do?"
+        )
+        return jsonify({'reply': reply, 'actions': actions})
+    elif any(w in msg_lower for w in ['thank', 'merci', 'thanks', 'wonderful', 'amazing', 'love', 'perfect']):
+        reply = f"Merci beaucoup! Should you need anything else, I am right here. À très bientôt! 💛"
+    elif any(w in msg_lower for w in ['bye', 'goodbye', 'see you', 'au revoir']):
+        reply = f"Au revoir! We look forward to welcoming you. À bientôt! ✨"
+    else:
+        actions = [{'type': 'quick_replies', 'options': [
+            'Browse the menu', 'Book a pickup slot', 'View my basket', 'Contact us'
+        ]}]
+        reply = (
+            f"Merci for your message! I may be able to help with one of these, "
+            f"or reach us at {email} for personal assistance. À votre service! 🥐"
+        )
+        return jsonify({'reply': reply, 'actions': actions})
+
+    return jsonify({'reply': reply, 'actions': actions})
+
+
+@csrf.exempt
+@app.route('/api/chatbot/action', methods=['POST'])
+def api_chatbot_action():
+    """Execute an action requested through the chatbot (add to cart, book slot, etc.)"""
+    data = request.get_json()
+    if not data:
+        return jsonify({'success': False, 'error': 'No data provided'}), 400
+
+    action_type = data.get('action')
+    currency = '£'
+
+    # --- Add to cart ---
+    if action_type == 'add_to_cart':
+        product_id = data.get('product_id')
+        quantity = max(1, min(int(data.get('quantity', 1)), 20))
+        variant_id = data.get('variant_id')
+        product = db.session.get(Product, product_id)
+        if not product or not product.is_active:
+            return jsonify({'success': False, 'reply': 'Pardon, this product is no longer available.'})
+
+        # Check stock
+        if product.track_inventory and not product.allow_backorder:
+            if product.stock_quantity < quantity:
+                return jsonify({
+                    'success': False,
+                    'reply': f"Désolé, we only have {product.stock_quantity} of {product.name} in stock."
+                })
+
+        cart = get_or_create_cart()
+        # Check if already in cart
+        existing = CartItem.query.filter_by(
+            cart_id=cart.id, product_id=product_id, variant_id=variant_id
+        ).first()
+        if existing:
+            existing.quantity += quantity
+        else:
+            item = CartItem(
+                cart_id=cart.id,
+                product_id=product_id,
+                variant_id=variant_id,
+                quantity=quantity,
+                price_at_add=product.price
+            )
+            db.session.add(item)
+        db.session.commit()
+
+        # Get new cart total
+        cart_total = sum((i.price_at_add or 0) * i.quantity for i in cart.items)
+        cart_count = sum(i.quantity for i in cart.items)
+
+        variant_name = ''
+        if variant_id:
+            variant = db.session.get(ProductVariant, variant_id)
+            if variant:
+                variant_name = f" ({variant.name})"
+
+        return jsonify({
+            'success': True,
+            'reply': (
+                f"Parfait! {quantity}× {product.name}{variant_name} added to your basket. "
+                f"Your basket now has {cart_count} item{'s' if cart_count != 1 else ''} "
+                f"({currency}{cart_total:.2f}). "
+                f"Would you like to continue browsing or proceed to checkout?"
+            ),
+            'cart_count': cart_count,
+            'cart_total': cart_total,
+            'actions': [
+                {'type': 'quick_replies', 'options': ['Browse more', 'View my basket', 'Checkout']}
+            ]
+        })
+
+    # --- Check available slots ---
+    if action_type == 'check_slots':
+        date_str = data.get('date')
+        if not date_str:
+            return jsonify({'success': False, 'reply': 'Please select a date.'})
+        try:
+            pickup_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+        except ValueError:
+            return jsonify({'success': False, 'reply': 'Invalid date format.'})
+
+        booking_settings = BookingSettings.query.first()
+        capacity = booking_settings.max_bookings_per_slot if booking_settings else 5
+
+        # Check if date is blocked
+        if BlockedDate.query.filter_by(date=pickup_date).first():
+            return jsonify({
+                'success': False,
+                'reply': f"Désolé, {date_str} is not available. Please select another date."
+            })
+
+        active_slots = AvailableTimeSlot.query.filter_by(is_active=True).order_by(
+            AvailableTimeSlot.time_slot
+        ).all()
+
+        available = []
+        for slot in active_slots:
+            if BlockedTimeSlot.query.filter_by(date=pickup_date, time_slot=slot.time_slot).first():
+                continue
+            booking_count = Booking.query.filter_by(
+                pickup_date=pickup_date, pickup_time=slot.time_slot
+            ).filter(Booking.status != 'cancelled').count()
+            order_count = Order.query.filter_by(
+                pickup_date=pickup_date, pickup_time=slot.time_slot
+            ).filter(Order.status != 'cancelled').count()
+            remaining = max(capacity - (booking_count + order_count), 0)
+            if remaining > 0:
+                available.append({
+                    'time': slot.time_slot,
+                    'remaining': remaining
+                })
+
+        if available:
+            return jsonify({
+                'success': True,
+                'reply': f"Here are the available pickup slots for {date_str}:",
+                'slots': available,
+                'date': date_str,
+                'actions': [{'type': 'slot_list', 'date': date_str, 'slots': available}]
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'reply': f"Désolé, no slots available on {date_str}. Please try another date.",
+                'actions': [{'type': 'show_slots'}]
+            })
+
+    # --- Reserve a slot (save to session) ---
+    if action_type == 'reserve_slot':
+        date_str = data.get('date')
+        time_str = data.get('time')
+        if not date_str or not time_str:
+            return jsonify({'success': False, 'reply': 'Please select both a date and time.'})
+
+        session['pickup_date'] = date_str
+        session['pickup_time'] = time_str
+        session['pickup_confirmed'] = True
+
+        # Check if delivery is available — if so, ask the customer
+        settings = SiteSettings.query.first()
+        if settings and getattr(settings, 'delivery_enabled', False):
+            return jsonify({
+                'success': True,
+                'reply': (
+                    f"Magnifique! Your slot is reserved for {date_str} at {time_str}. "
+                    f"How would you like to receive your order?"
+                ),
+                'actions': [
+                    {'type': 'fulfillment_choice'}
+                ]
+            })
+
+        return jsonify({
+            'success': True,
+            'reply': (
+                f"Magnifique! Your pickup slot is reserved: {date_str} at {time_str}. "
+                f"This will be saved when you proceed to checkout. "
+                f"Would you like to continue shopping or checkout now?"
+            ),
+            'actions': [
+                {'type': 'quick_replies', 'options': ['Browse the menu', 'View my basket', 'Checkout']}
+            ]
+        })
+
+    # --- Update quantity ---
+    if action_type == 'update_quantity':
+        item_id = data.get('item_id')
+        quantity = max(0, min(int(data.get('quantity', 1)), 20))
+        if 'cart_id' not in session:
+            return jsonify({'success': False, 'reply': 'Your basket is empty.'})
+        cart = db.session.get(Cart, session['cart_id'])
+        if not cart:
+            return jsonify({'success': False, 'reply': 'Your basket is empty.'})
+        item = CartItem.query.filter_by(cart_id=cart.id, id=item_id).first()
+        if not item:
+            return jsonify({'success': False, 'reply': 'Item not found in basket.'})
+        if quantity == 0:
+            db.session.delete(item)
+        else:
+            item.quantity = quantity
+        db.session.commit()
+        cart_count = sum(i.quantity for i in cart.items)
+        cart_total = sum((i.price_at_add or 0) * i.quantity for i in cart.items)
+        return jsonify({
+            'success': True,
+            'reply': f"Basket updated. {cart_count} item{'s' if cart_count != 1 else ''} ({currency}{cart_total:.2f}).",
+            'cart_count': cart_count,
+            'cart_total': cart_total
+        })
+
+    # --- Remove from cart ---
+    if action_type == 'remove_from_cart':
+        item_id = data.get('item_id')
+        if 'cart_id' not in session:
+            return jsonify({'success': False, 'reply': 'Your basket is empty.'})
+        cart = db.session.get(Cart, session['cart_id'])
+        if not cart:
+            return jsonify({'success': False, 'reply': 'Your basket is empty.'})
+        item = CartItem.query.filter_by(cart_id=cart.id, id=item_id).first()
+        if item:
+            name = db.session.get(Product, item.product_id).name if item.product_id else 'item'
+            db.session.delete(item)
+            db.session.commit()
+            cart_count = sum(i.quantity for i in cart.items)
+            cart_total = sum((i.price_at_add or 0) * i.quantity for i in cart.items)
+            return jsonify({
+                'success': True,
+                'reply': f"{name} removed from your basket.",
+                'cart_count': cart_count,
+                'cart_total': cart_total
+            })
+        return jsonify({'success': False, 'reply': 'Item not found.'})
+
+    return jsonify({'success': False, 'reply': 'Unknown action.'}), 400
 
 @app.route('/api/products')
 def api_products():
@@ -764,6 +1589,13 @@ def product_detail(slug):
     prefill_pickup_time = session.get('pickup_time')
     pickup_confirmed = session.get('pickup_confirmed', False)
     available_stock = product.stock_quantity if product.track_inventory else None
+    
+    # Smart product recommendations: other active products
+    recommended_products = Product.query.filter(
+        Product.is_active == True,
+        Product.id != product.id
+    ).order_by(Product.order).limit(4).all()
+    
     return render_template(
         'product_detail.html',
         product=product,
@@ -772,7 +1604,8 @@ def product_detail(slug):
         prefill_pickup_date=prefill_pickup_date,
         prefill_pickup_time=prefill_pickup_time,
         pickup_confirmed=pickup_confirmed,
-        available_stock=available_stock
+        available_stock=available_stock,
+        recommended_products=recommended_products
     )
 
 @app.route('/cart')
@@ -1335,6 +2168,18 @@ def order_confirmation(order_number):
     currency_symbol = CURRENCY_SYMBOLS.get(order.currency or app.config['DEFAULT_CURRENCY'], '\u00a3')
     return render_template('order_confirmation.html', order=order, settings=settings, currency_symbol=currency_symbol)
 
+@app.route('/order/<order_number>/track')
+def order_track(order_number):
+    """Order tracking page"""
+    order = Order.query.filter_by(order_number=order_number).first_or_404()
+    settings = SiteSettings.query.first()
+    currency_symbol = CURRENCY_SYMBOLS.get(order.currency or app.config['DEFAULT_CURRENCY'], '\u00a3')
+    status_steps = ['pending', 'confirmed', 'preparing', 'ready', 'completed']
+    current_index = status_steps.index(order.status) if order.status in status_steps else -1
+    return render_template('order_track.html', order=order, settings=settings,
+                           currency_symbol=currency_symbol, status_steps=status_steps,
+                           current_index=current_index)
+
 @app.route('/payment/success')
 def payment_success():
     order_number = request.args.get('order_number')
@@ -1402,12 +2247,17 @@ def stripe_webhook():
     except (ValueError, stripe.error.SignatureVerificationError):
         return jsonify({'error': 'Invalid payload'}), 400
 
+    # Idempotency: skip if we already processed this event
+    event_id = event.get('id')
+    if event_id and WebhookEvent.query.filter_by(event_id=event_id).first():
+        return jsonify({'status': 'already_processed'})
+
     event_type = event.get('type')
     data_object = event.get('data', {}).get('object', {})
     if event_type in ['checkout.session.completed', 'checkout.session.async_payment_succeeded']:
         order_number = data_object.get('metadata', {}).get('order_number')
         order = Order.query.filter_by(order_number=order_number).first()
-        if order:
+        if order and not payment_is_confirmed(order):
             if data_object.get('payment_intent'):
                 order.payment_intent_id = data_object.get('payment_intent')
             mark_order_paid(order)
@@ -1418,6 +2268,11 @@ def stripe_webhook():
         if order:
             order.payment_status = 'failed'
             db.session.commit()
+
+    # Record event as processed
+    if event_id:
+        db.session.add(WebhookEvent(event_id=event_id, provider='stripe', event_type=event_type))
+        db.session.commit()
 
     return jsonify({'status': 'ok'})
 
@@ -1432,12 +2287,17 @@ def paypal_webhook():
     if not verified:
         return jsonify({'error': 'Invalid webhook signature'}), 400
 
+    # Idempotency: derive a unique event ID
+    event_id = event.get('id') or request.headers.get('PAYPAL-TRANSMISSION-ID')
+    if event_id and WebhookEvent.query.filter_by(event_id=event_id).first():
+        return jsonify({'status': 'already_processed'})
+
     event_type = event.get('event_type')
     resource = event.get('resource', {})
     related_ids = resource.get('supplementary_data', {}).get('related_ids', {})
     order_id = related_ids.get('order_id') or resource.get('id')
     order = Order.query.filter_by(payment_intent_id=order_id).first()
-    if order and event_type == 'PAYMENT.CAPTURE.COMPLETED':
+    if order and event_type == 'PAYMENT.CAPTURE.COMPLETED' and not payment_is_confirmed(order):
         mark_order_paid(order)
         db.session.commit()
     elif order and event_type == 'PAYMENT.CAPTURE.DENIED':
@@ -1447,9 +2307,15 @@ def paypal_webhook():
         order.payment_status = 'refunded'
         db.session.commit()
 
+    # Record event as processed
+    if event_id:
+        db.session.add(WebhookEvent(event_id=event_id, provider='paypal', event_type=event_type))
+        db.session.commit()
+
     return jsonify({'status': 'ok'})
 
 
+@limiter.limit('10 per minute')
 @app.route('/account/login', methods=['GET', 'POST'])
 def customer_login():
     next_url = request.args.get('next') or request.form.get('next') or url_for('index')
@@ -1474,6 +2340,7 @@ def customer_login():
     return render_template('account_login.html', next=next_url, settings=settings)
 
 
+@limiter.limit('5 per minute')
 @app.route('/account/register', methods=['GET', 'POST'])
 def customer_register():
     next_url = request.args.get('next') or request.form.get('next') or url_for('checkout')
@@ -1490,6 +2357,8 @@ def customer_register():
 
         if not name or not email or not password:
             flash('Name, email, and password are required.', 'error')
+        elif not re.match(r'^[^@\s]+@[^@\s]+\.[^@\s]+$', email):
+            flash('Please enter a valid email address.', 'error')
         elif password != confirm_password:
             flash('Passwords do not match.', 'error')
         elif len(password) < 8:
@@ -1536,7 +2405,10 @@ def admin_login():
         
         if user and check_password_hash(user.password_hash, password):
             login_user(user)
+            audit_log('admin.login', 'User', user.id, user.email)
+            db.session.commit()
             return redirect(url_for('admin_dashboard'))
+        app.logger.warning('Failed admin login attempt for email: %s from IP: %s', email, request.remote_addr)
         flash('Invalid email or password', 'error')
     
     return render_template('admin/login.html')
@@ -1629,11 +2501,103 @@ def admin_dashboard():
                          low_stock_products=low_stock_products,
                          recent_orders=recent_orders)
 
+@app.route('/admin/export/<data_type>')
+@login_required
+def admin_export_csv(data_type):
+    import csv
+    import io
+    output = io.StringIO()
+    writer = csv.writer(output)
+    
+    if data_type == 'orders':
+        writer.writerow(['Order #', 'Customer', 'Email', 'Date', 'Status', 'Payment', 'Total'])
+        for o in Order.query.order_by(Order.created_at.desc()).all():
+            writer.writerow([o.order_number, o.customer_name, o.customer_email,
+                           o.created_at.strftime('%Y-%m-%d %H:%M'), o.status,
+                           o.payment_status, f'{o.total:.2f}'])
+    elif data_type == 'products':
+        writer.writerow(['Name', 'Price', 'Stock', 'Active', 'Category'])
+        for p in Product.query.order_by(Product.order).all():
+            writer.writerow([p.name, f'{p.price:.2f}' if p.price else '', 
+                           p.stock_quantity if p.track_inventory else 'N/A',
+                           'Yes' if p.is_active else 'No', p.category or ''])
+    elif data_type == 'bookings':
+        writer.writerow(['ID', 'Date', 'Time', 'Email', 'Phone', 'Status', 'Created'])
+        for b in Booking.query.order_by(Booking.created_at.desc()).all():
+            writer.writerow([b.id, b.pickup_date.strftime('%Y-%m-%d'), b.pickup_time,
+                           b.email or '', b.phone or '', b.status,
+                           b.created_at.strftime('%Y-%m-%d %H:%M')])
+    else:
+        flash('Invalid export type', 'error')
+        return redirect(url_for('admin_dashboard'))
+    
+    response = make_response(output.getvalue())
+    response.headers['Content-Type'] = 'text/csv'
+    response.headers['Content-Disposition'] = f'attachment; filename={data_type}_{date.today().isoformat()}.csv'
+    return response
+
 @app.route('/admin/products')
 @login_required
 def admin_products():
     products = Product.query.order_by(Product.order).all()
     return render_template('admin/products.html', products=products)
+
+@app.route('/admin/ai/generate-description', methods=['POST'])
+@login_required
+def admin_ai_generate_description():
+    data = request.get_json()
+    name = data.get('name', '').strip()
+    keywords = data.get('keywords', '').strip()
+    tone = data.get('tone', 'luxurious')
+    
+    if not name:
+        return jsonify({'error': 'Name required'}), 400
+    
+    openai_key = os.environ.get('OPENAI_API_KEY', '')
+    if openai_key:
+        try:
+            import openai
+            client = openai.OpenAI(api_key=openai_key)
+            prompt = f"""You are a copywriter for a luxury French patisserie in London called "Atelier Gourmand by OC".
+Write product descriptions for: {name}
+{f'Keywords to include: {keywords}' if keywords else ''}
+Tone: {tone}
+
+Return JSON with two fields:
+- "short_description": 1-2 sentences for product cards (max 120 chars, HTML ok)
+- "full_description": 2-3 paragraphs for product detail page (rich HTML with <p> tags)"""
+            
+            response = client.chat.completions.create(
+                model='gpt-4o-mini',
+                messages=[{'role': 'user', 'content': prompt}],
+                response_format={'type': 'json_object'},
+                max_tokens=500
+            )
+            import json
+            result = json.loads(response.choices[0].message.content)
+            return jsonify(result)
+        except Exception:
+            pass
+    
+    # Fallback: template-based generation when no API key
+    tone_phrases = {
+        'luxurious': ('Exquisitely crafted', 'indulgent', 'an artisan masterpiece'),
+        'playful': ('Delightfully whimsical', 'irresistible', 'a joyful treat'),
+        'minimal': ('Simply elegant', 'refined', 'pure quality'),
+        'classic': ('Classiquement Français', 'authentique', 'a timeless recipe')
+    }
+    adj1, adj2, adj3 = tone_phrases.get(tone, tone_phrases['luxurious'])
+    kw_text = f' with hints of {keywords}' if keywords else ''
+    
+    short_desc = f'<p>{adj1} {name.lower()}{kw_text} — {adj3}.</p>'
+    full_desc = (
+        f'<p>{adj1}, our {name} is a testament to fine patisserie. '
+        f'Each piece is {adj2} and handcrafted by our London atelier.</p>'
+        f'<p>Made with the finest ingredients{kw_text}, this creation delivers '
+        f'an unforgettable taste experience.</p>'
+        f'<p>Perfect for any occasion — whether a gift or a personal indulgence.</p>'
+    )
+    return jsonify({'short_description': short_desc, 'full_description': full_desc})
 
 @app.route('/admin/products/new', methods=['GET', 'POST'])
 @login_required
@@ -1648,8 +2612,18 @@ def admin_product_new():
                 file.save(filepath)
                 image_url = f'/static/uploads/products/{filename}'
         
+        # Generate slug from name
+        name = request.form['name']
+        base_slug = re.sub(r'[-\s]+', '-', re.sub(r'[^\w\s-]', '', name.lower())).strip('-')
+        slug = base_slug
+        counter = 1
+        while Product.query.filter_by(slug=slug).first() is not None:
+            slug = f"{base_slug}-{counter}"
+            counter += 1
+
         product = Product(
-            name=request.form['name'],
+            name=name,
+            slug=slug,
             short_description=request.form.get('short_description'),
             full_description=request.form.get('full_description'),
             price=float(request.form['price']) if request.form.get('price') else None,
@@ -1658,6 +2632,21 @@ def admin_product_new():
             order=int(request.form.get('order', 0))
         )
         db.session.add(product)
+        db.session.flush()
+
+        # Handle additional images (up to 6)
+        extra_files = request.files.getlist('extra_images')
+        img_order = 1
+        for ef in extra_files[:6]:
+            if ef and ef.filename and allowed_file(ef.filename):
+                fname = f"{product.id}_{img_order}_{secure_filename(ef.filename)}"
+                fpath = os.path.join(app.config['UPLOAD_FOLDER'], 'products', fname)
+                ef.save(fpath)
+                pi = ProductImage(product_id=product.id, image_url=f'/static/uploads/products/{fname}', order=img_order)
+                db.session.add(pi)
+                img_order += 1
+
+        audit_log('product.create', 'Product', product.id, product.name)
         db.session.commit()
         flash('Product created successfully', 'success')
         return redirect(url_for('admin_products'))
@@ -1679,12 +2668,42 @@ def admin_product_edit(id):
                 product.image_url = f'/static/uploads/products/{filename}'
         
         product.name = request.form['name']
+        if not product.slug:
+            base_slug = re.sub(r'[-\s]+', '-', re.sub(r'[^\w\s-]', '', product.name.lower())).strip('-')
+            slug = base_slug
+            counter = 1
+            while Product.query.filter(Product.slug == slug, Product.id != product.id).first() is not None:
+                slug = f"{base_slug}-{counter}"
+                counter += 1
+            product.slug = slug
         product.short_description = request.form.get('short_description')
         product.full_description = request.form.get('full_description')
         product.price = float(request.form['price']) if request.form.get('price') else None
         product.is_active = request.form.get('is_active') == 'on'
         product.order = int(request.form.get('order', 0))
-        
+
+        # Delete images marked for removal
+        delete_ids = request.form.getlist('delete_image')
+        if delete_ids:
+            for did in delete_ids:
+                pi = db.session.get(ProductImage, int(did))
+                if pi and pi.product_id == product.id:
+                    db.session.delete(pi)
+
+        # Handle additional images (up to 6 total)
+        existing_count = ProductImage.query.filter_by(product_id=product.id).count() - len(delete_ids)
+        extra_files = request.files.getlist('extra_images')
+        img_order = existing_count + 1
+        for ef in extra_files[:max(0, 6 - existing_count)]:
+            if ef and ef.filename and allowed_file(ef.filename):
+                fname = f"{product.id}_{img_order}_{secure_filename(ef.filename)}"
+                fpath = os.path.join(app.config['UPLOAD_FOLDER'], 'products', fname)
+                ef.save(fpath)
+                pi = ProductImage(product_id=product.id, image_url=f'/static/uploads/products/{fname}', order=img_order)
+                db.session.add(pi)
+                img_order += 1
+
+        audit_log('product.update', 'Product', product.id, product.name)
         db.session.commit()
         flash('Product updated successfully', 'success')
         return redirect(url_for('admin_products'))
@@ -1695,6 +2714,7 @@ def admin_product_edit(id):
 @login_required
 def admin_product_delete(id):
     product = Product.query.get_or_404(id)
+    audit_log('product.delete', 'Product', id, product.name)
     db.session.delete(product)
     db.session.commit()
     flash('Product deleted successfully', 'success')
@@ -2255,15 +3275,38 @@ def admin_settings():
         settings.chatway_widget = request.form.get('chatway_widget')
         settings.custom_chat_widget = request.form.get('custom_chat_widget')
 
+        # AI Chatbot settings
+        settings.chatbot_enabled = request.form.get('chatbot_enabled') == '1'
+        settings.chatbot_name = request.form.get('chatbot_name') or 'Atelier Gourmand'
+        settings.chatbot_subtitle = request.form.get('chatbot_subtitle') or 'Le Petit Concierge'
+        settings.chatbot_greeting = request.form.get('chatbot_greeting') or ''
+        settings.chatbot_personality = request.form.get('chatbot_personality') or ''
+        settings.chatbot_suggested_actions = request.form.get('chatbot_suggested_actions') or 'Browse the menu,Book a slot,View my basket'
+
         # Copy blocks
         settings.booking_heading = request.form.get('booking_heading')
         settings.booking_body = request.form.get('booking_body')
+        settings.booking_kicker = request.form.get('booking_kicker')
+        settings.booking_date_note = request.form.get('booking_date_note')
+        settings.booking_detail_description = request.form.get('booking_detail_description')
         settings.seasonal_heading = request.form.get('seasonal_heading')
         settings.seasonal_body = request.form.get('seasonal_body')
+        settings.seasonal_kicker = request.form.get('seasonal_kicker')
+        settings.maison_kicker = request.form.get('maison_kicker')
         settings.pickup_card_title = request.form.get('pickup_card_title')
         settings.pickup_card_note = request.form.get('pickup_card_note')
         settings.confirmation_title = request.form.get('confirmation_title')
         settings.confirmation_subtitle = request.form.get('confirmation_subtitle')
+        # Detail grid
+        settings.detail_next_drop_label = request.form.get('detail_next_drop_label')
+        settings.detail_next_drop_value = request.form.get('detail_next_drop_value')
+        settings.detail_pickup_window_label = request.form.get('detail_pickup_window_label')
+        settings.detail_pickup_window_value = request.form.get('detail_pickup_window_value')
+        settings.detail_order_deadline_label = request.form.get('detail_order_deadline_label')
+        settings.detail_order_deadline_value = request.form.get('detail_order_deadline_value')
+        # Footer
+        settings.footer_name = request.form.get('footer_name')
+        settings.footer_copyright = request.form.get('footer_copyright')
 
         # Invoicing
         settings.company_name = request.form.get('company_name')
@@ -2288,6 +3331,7 @@ def admin_settings():
         settings.entrance_duration_ms = int(request.form.get('entrance_duration_ms') or settings.entrance_duration_ms or 2000)
         settings.entrance_fade_ms = int(request.form.get('entrance_fade_ms') or settings.entrance_fade_ms or 800)
         
+        audit_log('settings.update', 'SiteSettings', settings.id)
         db.session.commit()
         flash('Settings updated successfully', 'success')
         return redirect(url_for('admin_settings'))
@@ -2350,6 +3394,7 @@ def admin_update_order_status(id):
     order.status = request.form.get('status')
     order.payment_status = request.form.get('payment_status', order.payment_status)
     order.admin_notes = request.form.get('admin_notes')
+    audit_log('order.update_status', 'Order', order.id, f'status={order.status} payment={order.payment_status}')
     db.session.commit()
     flash('Order updated successfully!', 'success')
     return redirect(url_for('admin_order_detail', id=id))
@@ -2362,6 +3407,7 @@ def admin_cancel_order(id):
     order.status = 'cancelled'
     if order.payment_status == 'paid':
         order.payment_status = 'refunded'
+    audit_log('order.cancel', 'Order', order.id, order.order_number)
     db.session.commit()
     flash('Order cancelled.', 'success')
     return redirect(url_for('admin_order_detail', id=id))
@@ -2371,6 +3417,7 @@ def admin_cancel_order(id):
 @login_required
 def admin_delete_order(id):
     order = Order.query.get_or_404(id)
+    audit_log('order.delete', 'Order', order.id, order.order_number)
     db.session.delete(order)
     db.session.commit()
     flash('Order deleted.', 'success')
@@ -2441,15 +3488,22 @@ def admin_delete_variant(id):
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()
-        # Create default admin user if none exists
-        if not User.query.filter_by(email=os.getenv('ADMIN_EMAIL', 'admin@ateliergourmandbyoc.co.uk')).first():
-            admin = User(
-                email=os.getenv('ADMIN_EMAIL', 'admin@ateliergourmandbyoc.co.uk'),
-                password_hash=generate_password_hash(os.getenv('ADMIN_PASSWORD', 'admin123'))
-            )
-            db.session.add(admin)
-            db.session.commit()
-            print('Default admin user created')
+        # Create admin user from env vars if none exists
+        admin_email = os.getenv('ADMIN_EMAIL')
+        admin_password = os.getenv('ADMIN_PASSWORD')
+        if admin_email and admin_password:
+            if not User.query.filter_by(email=admin_email).first():
+                if len(admin_password) < 12:
+                    print('WARNING: ADMIN_PASSWORD should be at least 12 characters for production')
+                admin = User(
+                    email=admin_email,
+                    password_hash=generate_password_hash(admin_password)
+                )
+                db.session.add(admin)
+                db.session.commit()
+                print('Admin user created')
+        elif not User.query.first():
+            print('WARNING: No admin user exists. Set ADMIN_EMAIL and ADMIN_PASSWORD env vars to create one.')
         
         # Create default booking settings if none exist
         if not BookingSettings.query.first():
@@ -2477,4 +3531,5 @@ if __name__ == '__main__':
             db.session.commit()
             print('Default time slots created (48 slots with 30min intervals)')
     
-    app.run(debug=True, port=5000)
+    is_dev = os.getenv('FLASK_ENV') != 'production'
+    app.run(debug=is_dev, port=int(os.getenv('PORT', '5000')))

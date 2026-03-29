@@ -114,7 +114,11 @@
           We've emailed your receipt and pickup details to {{ order.customer_email }}.
         </p>
 
-        <a href="{{ url_for('index') }}" class="btn-primary" style="display: inline-block; padding: 12px 32px; text-decoration: none">
+        <a href="{{ url_for('order_track', order_number=order.order_number) }}" class="btn-primary" style="display: inline-block; padding: 12px 32px; text-decoration: none; margin-bottom: 12px;">
+          Track your order
+        </a>
+        <br>
+        <a href="{{ url_for('index') }}" style="color: var(--gold); text-decoration: underline; font-size: 14px;">
           Return to the atelier
         </a>
       </div>
@@ -134,5 +138,6 @@
         <p class="footer-legal">(c) 2026 Atelier Gourmand by OC. All rights reserved.</p>
       </div>
     </footer>
+    {% include 'chatbot_widget.html' %}
   </body>
 </html>

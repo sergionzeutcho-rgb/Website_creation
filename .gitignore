@@ -19,3 +19,16 @@ instance/
 .vscode/
 .idea/
 *.log
+nul
+
+# One-off migration/utility scripts
+_migration_result.txt
+_run_migration.py
+backup_db.py
+migrate_chatbot_settings.py
+
+# Ad-hoc test output
+chatbot_result.txt
+chatbot_test_results.txt
+test_chatbot.py
+test_chatbot_full.py

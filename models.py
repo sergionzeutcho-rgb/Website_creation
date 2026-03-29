@@ -247,12 +247,27 @@ class SiteSettings(db.Model):
     # Copy blocks
     booking_heading = db.Column(db.String(200))
     booking_body = db.Column(db.Text)
+    booking_kicker = db.Column(db.String(200))
+    booking_date_note = db.Column(db.Text)
+    booking_detail_description = db.Column(db.Text)
     seasonal_heading = db.Column(db.String(200))
     seasonal_body = db.Column(db.Text)
+    seasonal_kicker = db.Column(db.String(200))
+    maison_kicker = db.Column(db.String(200))
     pickup_card_title = db.Column(db.String(200))
     pickup_card_note = db.Column(db.Text)
     confirmation_title = db.Column(db.String(200))
     confirmation_subtitle = db.Column(db.Text)
+    # Detail grid (booking sidebar)
+    detail_next_drop_label = db.Column(db.String(100))
+    detail_next_drop_value = db.Column(db.String(200))
+    detail_pickup_window_label = db.Column(db.String(100))
+    detail_pickup_window_value = db.Column(db.String(200))
+    detail_order_deadline_label = db.Column(db.String(100))
+    detail_order_deadline_value = db.Column(db.String(200))
+    # Footer
+    footer_name = db.Column(db.String(200))
+    footer_copyright = db.Column(db.Text)
     allow_test_checkout = db.Column(db.Boolean, default=False)
     # Invoicing
     company_name = db.Column(db.String(200))
@@ -284,6 +299,14 @@ class SiteSettings(db.Model):
     entrance_logo_url = db.Column(db.String(500))
     entrance_duration_ms = db.Column(db.Integer, default=2000)
     entrance_fade_ms = db.Column(db.Integer, default=800)
+
+    # AI Chatbot settings
+    chatbot_enabled = db.Column(db.Boolean, default=True)
+    chatbot_name = db.Column(db.String(100), default='Atelier Gourmand')
+    chatbot_subtitle = db.Column(db.String(100), default='Le Petit Concierge')
+    chatbot_greeting = db.Column(db.Text, default='Bonjour! 🥐 I can help you browse our collection, add items to your basket, or book a pickup. What would you like?')
+    chatbot_personality = db.Column(db.Text, default='You are Le Petit Concierge, a warm and knowledgeable assistant for a French-inspired artisan patisserie. Be elegant, helpful, and concise.')
+    chatbot_suggested_actions = db.Column(db.Text, default='Browse the menu,Book a slot,View my basket')
 
 class NavigationItem(db.Model):
     """Navigation menu items"""
@@ -341,4 +364,27 @@ class DeliveryZone(db.Model):
     order = db.Column(db.Integer, default=0)
     created_at = db.Column(db.DateTime, default=utcnow)
     updated_at = db.Column(db.DateTime, default=utcnow, onupdate=utcnow)
+
+
+class AuditLog(db.Model):
+    """Audit trail for admin actions"""
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    user_email = db.Column(db.String(120))
+    action = db.Column(db.String(100), nullable=False)  # e.g. "product.create", "order.cancel"
+    target_type = db.Column(db.String(50))  # e.g. "Product", "Order"
+    target_id = db.Column(db.Integer)
+    details = db.Column(db.Text)  # JSON or free-text extra info
+    ip_address = db.Column(db.String(45))
+    created_at = db.Column(db.DateTime, default=utcnow)
+
+
+class WebhookEvent(db.Model):
+    """Idempotency log for payment webhooks"""
+    id = db.Column(db.Integer, primary_key=True)
+    event_id = db.Column(db.String(200), unique=True, nullable=False)
+    provider = db.Column(db.String(20), nullable=False)  # "stripe" or "paypal"
+    event_type = db.Column(db.String(100))
+    status = db.Column(db.String(20), default='processed')  # processed, failed
+    created_at = db.Column(db.DateTime, default=utcnow)
 

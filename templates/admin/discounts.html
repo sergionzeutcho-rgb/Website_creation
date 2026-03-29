@@ -103,4 +103,52 @@
         <li>Set end dates for limited-time promotions</li>
     </ul>
 </div>
+
+<!-- AI Discount Suggestions -->
+<div class="card" style="margin-top: 1.5rem; background: linear-gradient(135deg, #faf5ee, #fff); border-left: 3px solid #c5a572;">
+    <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1rem;">
+        <svg width="20" height="20" fill="none" stroke="#c5a572" stroke-width="2" viewBox="0 0 24 24"><path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 16.8l-6.2 4.5 2.4-7.4L2 9.4h7.6z"/></svg>
+        <h3 style="margin: 0; color: #92722f;">AI Discount Suggestions</h3>
+    </div>
+    <button type="button" onclick="getDiscountSuggestions()" id="suggestBtn" class="btn btn-primary" style="margin-bottom: 1rem; font-size: 0.85rem; padding: 0.5rem 1rem;">
+        ✨ Get Smart Suggestions
+    </button>
+    <div id="discountSuggestions" style="display: none; padding: 1rem; background: white; border-radius: 8px;"></div>
+</div>
+
+{% block extra_js %}
+<script>
+function getDiscountSuggestions() {
+    const btn = document.getElementById('suggestBtn');
+    const container = document.getElementById('discountSuggestions');
+    btn.disabled = true;
+    btn.textContent = '⏳ Analysing...';
+    container.style.display = 'block';
+    container.innerHTML = '<p style="color:#71717a;">Analysing your sales data...</p>';
+
+    fetch('/admin/ai/discount-suggestions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken }
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.suggestions) {
+            container.innerHTML = data.suggestions.map(s => 
+                `<div style="padding:12px;border-left:3px solid #c5a572;margin-bottom:10px;background:#faf5ee;border-radius:0 8px 8px 0;">
+                    <strong>${s.code}</strong> — ${s.description}
+                    <div style="font-size:0.8rem;color:#71717a;margin-top:4px;">${s.reason}</div>
+                </div>`
+            ).join('');
+        }
+    })
+    .catch(() => {
+        container.innerHTML = '<p style="color:#ef4444;">Unable to generate suggestions right now.</p>';
+    })
+    .finally(() => {
+        btn.disabled = false;
+        btn.textContent = '✨ Get Smart Suggestions';
+    });
+}
+</script>
+{% endblock %}
 {% endblock %}

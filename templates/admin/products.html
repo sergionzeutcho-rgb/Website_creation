@@ -2,10 +2,26 @@
 
 {% block title %}Products{% endblock %}
 
+{% block breadcrumbs %}
+<div class="admin-breadcrumbs">
+    <a href="{{ url_for('admin_dashboard') }}">Dashboard</a>
+    <span class="sep">/</span>
+    <span>Products</span>
+</div>
+{% endblock %}
+
 {% block content %}
 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
     <h1 style="font-size: 2rem;">Products</h1>
-    <a href="{{ url_for('admin_product_new') }}" class="btn btn-primary">Add New Product</a>
+    <div style="display: flex; gap: 0.75rem; align-items: center;">
+        <input type="text" id="productSearch" placeholder="Search products..." style="padding: 0.55rem 0.85rem; border: 1px solid #d4d4d8; border-radius: 8px; font-size: 0.9rem; width: 200px;">
+        <select id="productStatusFilter" style="padding: 0.55rem 0.85rem; border: 1px solid #d4d4d8; border-radius: 8px; font-size: 0.9rem;">
+            <option value="">All statuses</option>
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
+        </select>
+        <a href="{{ url_for('admin_product_new') }}" class="btn btn-primary">Add New Product</a>
+    </div>
 </div>
 
 <div class="card">
@@ -59,4 +75,27 @@
     <p style="color: #6c757d; text-align: center; padding: 2rem;">No products yet. Create your first product!</p>
     {% endif %}
 </div>
+
+{% block extra_js %}
+<script>
+(function() {
+    const search = document.getElementById('productSearch');
+    const statusFilter = document.getElementById('productStatusFilter');
+    const rows = document.querySelectorAll('table tbody tr');
+    function filter() {
+        const q = search.value.toLowerCase();
+        const s = statusFilter.value;
+        rows.forEach(row => {
+            const name = row.querySelector('td:nth-child(2)')?.textContent.toLowerCase() || '';
+            const active = row.querySelector('td:nth-child(5)')?.textContent.trim().toLowerCase() || '';
+            const matchQ = !q || name.includes(q);
+            const matchS = !s || (s === 'active' && active === 'active') || (s === 'inactive' && active === 'inactive');
+            row.style.display = matchQ && matchS ? '' : 'none';
+        });
+    }
+    if (search) search.addEventListener('input', filter);
+    if (statusFilter) statusFilter.addEventListener('change', filter);
+})();
+</script>
+{% endblock %}
 {% endblock %}

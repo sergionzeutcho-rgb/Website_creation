@@ -2,36 +2,58 @@
 
 {% block title %}Dashboard - Analytics{% endblock %}
 
+{% block breadcrumbs %}
+<div class="admin-breadcrumbs">
+    <span>Dashboard</span>
+</div>
+{% endblock %}
+
 {% block content %}
-<div style="margin-bottom: 2rem;">
-    <h1 style="font-size: 2.25rem; margin-bottom: 0.5rem;">Dashboard</h1>
-    <p style="color: #6c757d;">Vue d'ensemble des performances et statistiques</p>
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
+    <div>
+        <h1 style="font-size: 2.25rem; margin-bottom: 0.5rem;">Dashboard</h1>
+        <p style="color: #6c757d;">Overview of performance and key metrics</p>
+    </div>
+    <div style="display: flex; gap: 0.5rem;">
+        <a href="{{ url_for('admin_export_csv', data_type='orders') }}" class="btn" style="font-size: 0.8rem; padding: 0.5rem 1rem;">
+            <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24" style="vertical-align: -2px; margin-right: 4px;"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+            Orders CSV
+        </a>
+        <a href="{{ url_for('admin_export_csv', data_type='products') }}" class="btn" style="font-size: 0.8rem; padding: 0.5rem 1rem;">
+            <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24" style="vertical-align: -2px; margin-right: 4px;"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+            Products CSV
+        </a>
+        <a href="{{ url_for('admin_export_csv', data_type='bookings') }}" class="btn" style="font-size: 0.8rem; padding: 0.5rem 1rem;">
+            <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24" style="vertical-align: -2px; margin-right: 4px;"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+            Bookings CSV
+        </a>
+    </div>
 </div>
 
 <!-- KPI Cards -->
 <div class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1.5rem; margin-bottom: 2rem;">
     <div class="stat-card" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none;">
-        <h3 style="font-size: 0.875rem; font-weight: 700; margin-bottom: 0.5rem; text-transform: uppercase; letter-spacing: 0.5px; text-shadow: 0 1px 2px rgba(0,0,0,0.2);">Chiffre d'affaires total</h3>
+        <h3 style="font-size: 0.875rem; font-weight: 700; margin-bottom: 0.5rem; text-transform: uppercase; letter-spacing: 0.5px; text-shadow: 0 1px 2px rgba(0,0,0,0.2);">Total Revenue</h3>
         <div class="value" style="font-size: 2rem; font-weight: 700; text-shadow: 0 2px 4px rgba(0,0,0,0.1);">£{{ "%.2f"|format(stats.total_revenue) }}</div>
-        <small style="font-size: 0.813rem; opacity: 0.95;">Toutes les commandes payées</small>
+        <small style="font-size: 0.813rem; opacity: 0.95;">All paid orders</small>
     </div>
     
     <div class="stat-card" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color: white; border: none;">
-        <h3 style="font-size: 0.875rem; font-weight: 700; margin-bottom: 0.5rem; text-transform: uppercase; letter-spacing: 0.5px; text-shadow: 0 1px 2px rgba(0,0,0,0.2);">Profit estimé</h3>
+        <h3 style="font-size: 0.875rem; font-weight: 700; margin-bottom: 0.5rem; text-transform: uppercase; letter-spacing: 0.5px; text-shadow: 0 1px 2px rgba(0,0,0,0.2);">Estimated Profit</h3>
         <div class="value" style="font-size: 2rem; font-weight: 700; text-shadow: 0 2px 4px rgba(0,0,0,0.1);">£{{ "%.2f"|format(stats.total_profit) }}</div>
-        <small style="font-size: 0.813rem; opacity: 0.95;">Marge de 60%</small>
+        <small style="font-size: 0.813rem; opacity: 0.95;">60% margin</small>
     </div>
     
     <div class="stat-card" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); color: white; border: none;">
-        <h3 style="font-size: 0.875rem; font-weight: 700; margin-bottom: 0.5rem; text-transform: uppercase; letter-spacing: 0.5px; text-shadow: 0 1px 2px rgba(0,0,0,0.2);">Ventes aujourd'hui</h3>
+        <h3 style="font-size: 0.875rem; font-weight: 700; margin-bottom: 0.5rem; text-transform: uppercase; letter-spacing: 0.5px; text-shadow: 0 1px 2px rgba(0,0,0,0.2);">Today's Sales</h3>
         <div class="value" style="font-size: 2rem; font-weight: 700; text-shadow: 0 2px 4px rgba(0,0,0,0.1);">£{{ "%.2f"|format(stats.today_revenue) }}</div>
-        <small style="font-size: 0.813rem; opacity: 0.95;">{{ stats.pending_orders }} commandes en attente</small>
+        <small style="font-size: 0.813rem; opacity: 0.95;">{{ stats.pending_orders }} pending orders</small>
     </div>
     
     <div class="stat-card" style="background: linear-gradient(135deg, #fa709a 0%, #fee140 100%); color: white; border: none;">
-        <h3 style="font-size: 0.875rem; font-weight: 700; margin-bottom: 0.5rem; text-transform: uppercase; letter-spacing: 0.5px; text-shadow: 0 1px 2px rgba(0,0,0,0.2);">Valeur du stock</h3>
+        <h3 style="font-size: 0.875rem; font-weight: 700; margin-bottom: 0.5rem; text-transform: uppercase; letter-spacing: 0.5px; text-shadow: 0 1px 2px rgba(0,0,0,0.2);">Stock Value</h3>
         <div class="value" style="font-size: 2rem; font-weight: 700; text-shadow: 0 2px 4px rgba(0,0,0,0.1);">£{{ "%.2f"|format(stats.total_stock_value) }}</div>
-        <small style="font-size: 0.813rem; opacity: 0.95;">{{ stats.total_products }} produits</small>
+        <small style="font-size: 0.813rem; opacity: 0.95;">{{ stats.total_products }} products</small>
     </div>
 </div>
 
@@ -41,7 +63,7 @@
     <div class="card" style="padding: 1.5rem;">
         <h2 style="font-size: 1.25rem; margin-bottom: 1.5rem; display: flex; align-items: center; gap: 0.5rem;">
             <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24"><path d="M3 13h2v8H3v-8zm4-6h2v14H7V7zm4-4h2v18h-2V3zm4 9h2v9h-2v-9zm4-3h2v12h-2V9z"/></svg>
-            Évolution des ventes (30 derniers jours)
+            Revenue (last 30 days)
         </h2>
         <canvas id="revenueChart" style="max-height: 300px;"></canvas>
     </div>
@@ -50,7 +72,7 @@
     <div class="card" style="padding: 1.5rem;">
         <h2 style="font-size: 1.25rem; margin-bottom: 1.5rem; display: flex; align-items: center; gap: 0.5rem;">
             <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
-            Top 5 produits
+            Top 5 Products
         </h2>
         {% if top_products %}
         <div style="display: flex; flex-direction: column; gap: 1rem;">
@@ -58,14 +80,14 @@
             <div style="padding: 0.75rem; background: #f8f9fa; border-radius: 8px; border-left: 3px solid #C5A572;">
                 <div style="font-weight: 600; margin-bottom: 0.25rem; font-size: 0.938rem;">{{ product.product_name }}</div>
                 <div style="display: flex; justify-content: space-between; font-size: 0.875rem; color: #6c757d;">
-                    <span>{{ product.total_sold }} vendus</span>
+                    <span>{{ product.total_sold }} sold</span>
                     <span style="color: #C5A572; font-weight: 600;">£{{ "%.2f"|format(product.total_revenue) }}</span>
                 </div>
             </div>
             {% endfor %}
         </div>
         {% else %}
-        <p style="color: #6c757d; text-align: center; padding: 2rem;">Aucune vente pour le moment</p>
+        <p style="color: #6c757d; text-align: center; padding: 2rem;">No sales yet</p>
         {% endif %}
     </div>
 </div>
@@ -76,16 +98,16 @@
     <div class="card" style="padding: 1.5rem;">
         <h2 style="font-size: 1.25rem; margin-bottom: 1.5rem; display: flex; align-items: center; gap: 0.5rem; color: #dc3545;">
             <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24"><path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg>
-            Stock faible
+            Low Stock Alert
         </h2>
         {% if low_stock_products %}
         <div style="overflow-x: auto;">
             <table style="width: 100%; font-size: 0.875rem;">
                 <thead>
                     <tr style="border-bottom: 2px solid #dee2e6;">
-                        <th style="padding: 0.75rem; text-align: left;">Produit</th>
+                        <th style="padding: 0.75rem; text-align: left;">Product</th>
                         <th style="padding: 0.75rem; text-align: center;">Stock</th>
-                        <th style="padding: 0.75rem; text-align: right;">Prix</th>
+                        <th style="padding: 0.75rem; text-align: right;">Price</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -108,7 +130,7 @@
             </table>
         </div>
         {% else %}
-        <p style="color: #6c757d; text-align: center; padding: 2rem;">Tous les stocks sont OK ✓</p>
+        <p style="color: #6c757d; text-align: center; padding: 2rem;">All stock levels OK ✓</p>
         {% endif %}
     </div>
     
@@ -116,7 +138,7 @@
     <div class="card" style="padding: 1.5rem;">
         <h2 style="font-size: 1.25rem; margin-bottom: 1.5rem; display: flex; align-items: center; gap: 0.5rem;">
             <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24"><path d="M7 18c-1.1 0-1.99.9-1.99 2S5.9 22 7 22s2-.9 2-2-.9-2-2-2zM1 2v2h2l3.6 7.59-1.35 2.45c-.16.28-.25.61-.25.96 0 1.1.9 2 2 2h12v-2H7.42c-.14 0-.25-.11-.25-.25l.03-.12.9-1.63h7.45c.75 0 1.41-.41 1.75-1.03l3.58-6.49c.08-.14.12-.31.12-.48 0-.55-.45-1-1-1H5.21l-.94-2H1zm16 16c-1.1 0-1.99.9-1.99 2s.89 2 1.99 2 2-.9 2-2-.9-2-2-2z"/></svg>
-            Commandes récentes
+            Recent Orders
         </h2>
         {% if recent_orders %}
         <div style="display: flex; flex-direction: column; gap: 0.75rem; max-height: 400px; overflow-y: auto;">
@@ -140,31 +162,68 @@
             {% endfor %}
         </div>
         {% else %}
-        <p style="color: #6c757d; text-align: center; padding: 2rem;">Aucune commande</p>
+        <p style="color: #6c757d; text-align: center; padding: 2rem;">No orders yet</p>
         {% endif %}
     </div>
 </div>
 
 <!-- Quick Actions -->
 <div class="card" style="padding: 1.5rem;">
-    <h2 style="font-size: 1.25rem; margin-bottom: 1.5rem;">Actions rapides</h2>
+    <h2 style="font-size: 1.25rem; margin-bottom: 1.5rem;">Quick Actions</h2>
     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;">
         <a href="{{ url_for('admin_product_new') }}" class="btn btn-primary" style="text-align: center;">
             <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24" style="vertical-align: middle; margin-right: 0.5rem;"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
-            Nouveau produit
+            New Product
         </a>
         <a href="{{ url_for('admin_orders') }}" class="btn" style="text-align: center;">
             <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24" style="vertical-align: middle; margin-right: 0.5rem;"><path d="M7 18c-1.1 0-1.99.9-1.99 2S5.9 22 7 22s2-.9 2-2-.9-2-2-2zM1 2v2h2l3.6 7.59-1.35 2.45c-.16.28-.25.61-.25.96 0 1.1.9 2 2 2h12v-2H7.42c-.14 0-.25-.11-.25-.25l.03-.12.9-1.63h7.45c.75 0 1.41-.41 1.75-1.03l3.58-6.49c.08-.14.12-.31.12-.48 0-.55-.45-1-1-1H5.21l-.94-2H1zm16 16c-1.1 0-1.99.9-1.99 2s.89 2 1.99 2 2-.9 2-2-.9-2-2-2z"/></svg>
-            Voir les commandes
+            View Orders
         </a>
         <a href="{{ url_for('admin_products') }}" class="btn" style="text-align: center;">
             <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24" style="vertical-align: middle; margin-right: 0.5rem;"><path d="M20 4H4v2h16V4zm1 10v-2l-1-5H4l-1 5v2h1v6h10v-6h4v6h2v-6h1zm-9 4H6v-4h6v4z"/></svg>
-            Gérer le stock
+            Manage Stock
         </a>
         <a href="{{ url_for('index') }}" class="btn" style="text-align: center;" target="_blank">
             <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24" style="vertical-align: middle; margin-right: 0.5rem;"><path d="M19 19H5V5h7V3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z"/></svg>
-            Voir le site
+            View Site
         </a>
+    </div>
+</div>
+
+<!-- AI Demand Forecast -->
+<div class="card" style="padding: 1.5rem; margin-top: 1.5rem; background: linear-gradient(135deg, #faf5ee, #fff);">
+    <h2 style="font-size: 1.25rem; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem;">
+        <svg width="20" height="20" fill="none" stroke="#c5a572" stroke-width="2" viewBox="0 0 24 24"><path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 16.8l-6.2 4.5 2.4-7.4L2 9.4h7.6z"/></svg>
+        AI Demand Insights
+    </h2>
+    <div id="aiInsights" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem;">
+        <div style="padding: 1rem; background: white; border-radius: 8px; border-left: 3px solid #c5a572;">
+            <div style="font-size: 0.8rem; text-transform: uppercase; color: #71717a; margin-bottom: 0.5rem;">7-day Revenue Trend</div>
+            {% set last7 = stats.daily_revenue[-7:] %}
+            {% set avg7 = (last7|sum / 7) if last7 else 0 %}
+            {% set prev7 = stats.daily_revenue[-14:-7] if stats.daily_revenue|length >= 14 else [] %}
+            {% set avg_prev = (prev7|sum / 7) if prev7 else avg7 %}
+            <div style="font-size: 1.5rem; font-weight: 700; color: {% if avg7 >= avg_prev %}#22c55e{% else %}#ef4444{% endif %};">
+                {% if avg7 >= avg_prev %}↑{% else %}↓{% endif %} £{{ "%.2f"|format(avg7) }}/day
+            </div>
+            <div style="font-size: 0.8rem; color: #71717a;">
+                {% if avg_prev > 0 %}
+                {{ "%.0f"|format(((avg7 - avg_prev) / avg_prev * 100)) }}% vs previous week
+                {% else %}Based on recent data{% endif %}
+            </div>
+        </div>
+        <div style="padding: 1rem; background: white; border-radius: 8px; border-left: 3px solid #667eea;">
+            <div style="font-size: 0.8rem; text-transform: uppercase; color: #71717a; margin-bottom: 0.5rem;">Next Week Projection</div>
+            <div style="font-size: 1.5rem; font-weight: 700; color: #667eea;">£{{ "%.2f"|format(avg7 * 7) }}</div>
+            <div style="font-size: 0.8rem; color: #71717a;">Based on 7-day moving average</div>
+        </div>
+        <div style="padding: 1rem; background: white; border-radius: 8px; border-left: 3px solid #f5576c;">
+            <div style="font-size: 0.8rem; text-transform: uppercase; color: #71717a; margin-bottom: 0.5rem;">Peak Day</div>
+            {% set max_rev = stats.daily_revenue|max if stats.daily_revenue else 0 %}
+            {% set max_idx = stats.daily_revenue.index(max_rev) if max_rev > 0 and stats.daily_revenue else 0 %}
+            <div style="font-size: 1.5rem; font-weight: 700; color: #f5576c;">{{ stats.daily_labels[max_idx] if stats.daily_labels else 'N/A' }}</div>
+            <div style="font-size: 0.8rem; color: #71717a;">£{{ "%.2f"|format(max_rev) }} — highest in 30 days</div>
+        </div>
     </div>
 </div>
 

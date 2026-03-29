@@ -24,6 +24,7 @@
         <button class="icon-btn" aria-label="Open menu">
           <span></span>
           <span></span>
+          <span></span>
         </button>
         <div class="brand-mark">
           {% if settings and settings.logo_url %}
@@ -101,7 +102,7 @@
 
       <section class="booking" id="booking">
         <div class="booking-card">
-          <p class="kicker">Schedule your pickup</p>
+          <p class="kicker">{% if settings and settings.booking_kicker %}{{ settings.booking_kicker }}{% else %}Schedule your pickup{% endif %}</p>
           <h2>{% if settings and settings.booking_heading %}{{ settings.booking_heading }}{% else %}I will collect my order on{% endif %}</h2>
           <p class="booking-note" style="margin-top: 8px; color: #6c757d;">
             {% if settings and settings.booking_body %}{{ settings.booking_body }}{% else %}Reserve your pickup slot; we'll hold it while you finish checkout.{% endif %}
@@ -127,6 +128,9 @@
             </label>
             <button class="btn primary" type="submit">Confirm slot</button>
           </form>
+          {% if settings and settings.booking_date_note %}
+          <p class="booking-note" style="margin-top: 8px; color: #6c757d;">{{ settings.booking_date_note }}</p>
+          {% endif %}
           <p class="booking-note" id="booking-note">
             {% if settings and settings.pickup_card_note %}{{ settings.pickup_card_note }}{% else %}Slots update every morning. We will confirm by email.{% endif %}
           </p>
@@ -134,24 +138,24 @@
         <div class="booking-details">
           <h3>{% if settings and settings.pickup_card_title %}{{ settings.pickup_card_title }}{% else %}Pickup at the atelier{% endif %}</h3>
           <p>
-            {% if settings and settings.pickup_card_note %}
-              {{ settings.pickup_card_note }}
+            {% if settings and settings.booking_detail_description %}
+              {{ settings.booking_detail_description }}
             {% else %}
               Limited batches, refined flavors, and a curated menu that evolves each week. We focus on precision, minimalism, and clean finishes.
             {% endif %}
           </p>
           <div class="detail-grid">
             <div>
-              <span class="detail-label">Next drop</span>
-              <span>Friday · 10:00 am</span>
+              <span class="detail-label">{% if settings and settings.detail_next_drop_label %}{{ settings.detail_next_drop_label }}{% else %}Next drop{% endif %}</span>
+              <span>{% if settings and settings.detail_next_drop_value %}{{ settings.detail_next_drop_value }}{% else %}Friday · 10:00 am{% endif %}</span>
             </div>
             <div>
-              <span class="detail-label">Pickup window</span>
-              <span>08:00 am - 07:00 pm</span>
+              <span class="detail-label">{% if settings and settings.detail_pickup_window_label %}{{ settings.detail_pickup_window_label }}{% else %}Pickup window{% endif %}</span>
+              <span>{% if settings and settings.detail_pickup_window_value %}{{ settings.detail_pickup_window_value }}{% else %}08:00 am - 07:00 pm{% endif %}</span>
             </div>
             <div>
-              <span class="detail-label">Order deadline</span>
-              <span>48 hours before</span>
+              <span class="detail-label">{% if settings and settings.detail_order_deadline_label %}{{ settings.detail_order_deadline_label }}{% else %}Order deadline{% endif %}</span>
+              <span>{% if settings and settings.detail_order_deadline_value %}{{ settings.detail_order_deadline_value }}{% else %}48 hours before{% endif %}</span>
             </div>
           </div>
         </div>
@@ -159,7 +163,7 @@
 
       <section class="seasonal" id="seasonal">
         <div class="section-head">
-          <p class="kicker">Our seasonal creations</p>
+          <p class="kicker">{% if settings and settings.seasonal_kicker %}{{ settings.seasonal_kicker }}{% else %}Our seasonal creations{% endif %}</p>
           <h2>{% if settings and settings.seasonal_heading %}{{ settings.seasonal_heading }}{% else %}Delicate structures, bold fruits.{% endif %}</h2>
           <p>
             {% if settings and settings.seasonal_body %}
@@ -177,12 +181,20 @@
                 <img
                   src="{% if product.image_url %}{{ product.image_url }}{% else %}https://images.unsplash.com/photo-1542826438-bd32f43d626f?auto=format&fit=crop&w=900&q=80{% endif %}"
                   alt="{{ product.name }}"
+                  loading="lazy"
                 />
                 <div class="card-body">
                   <h3>{{ product.name }}</h3>
                   <p>{{ (product.short_description or product.full_description or '')|safe }}</p>
                   {% if product.price %}
                   <p style="margin-top: 0.5rem; font-weight: 600; color: var(--gold);">{{ currency_symbol }}{{ "%.2f"|format(product.price) }}</p>
+                  {% endif %}
+                  {% if product.track_inventory %}
+                    {% if product.stock_quantity == 0 %}
+                    <span class="stock-badge out">Sold out</span>
+                    {% elif product.stock_quantity <= 3 %}
+                    <span class="stock-badge low">Only {{ product.stock_quantity }} left</span>
+                    {% endif %}
                   {% endif %}
                 </div>
               </article>
@@ -235,7 +247,7 @@
 
       <section class="maison" id="maison">
         <div class="maison-copy">
-          <p class="kicker">Our maison</p>
+          <p class="kicker">{% if settings and settings.maison_kicker %}{{ settings.maison_kicker }}{% else %}Our maison{% endif %}</p>
           <h2>{% if maison and maison.title %}{{ maison.title }}{% else %}Quiet luxury, careful detail.{% endif %}</h2>
           <p>
             {% if maison and maison.description %}
@@ -301,7 +313,7 @@
 
     <footer class="site-footer">
       <div>
-        <h3>Atelier Gourmand by OC</h3>
+        <h3>{% if settings and settings.footer_name %}{{ settings.footer_name }}{% else %}Atelier Gourmand by OC{% endif %}</h3>
         <p>{% if settings and settings.address %}{{ settings.address }}{% else %}Wilton Place, SW1X 7RL · London{% endif %}</p>
       </div>
       <div>
@@ -336,7 +348,7 @@
       </div>
       <div>
         <p class="footer-label">Legal</p>
-        <p class="footer-legal">© 2026 Atelier Gourmand by OC. All rights reserved.</p>
+        <p class="footer-legal">{% if settings and settings.footer_copyright %}{{ settings.footer_copyright }}{% else %}© 2026 Atelier Gourmand by OC. All rights reserved.{% endif %}</p>
       </div>
     </footer>
 
@@ -362,6 +374,31 @@
     {% endif %}
 
     <script>
+      /* ─── TOAST SYSTEM ─── */
+      const toastContainer = document.createElement('div');
+      toastContainer.className = 'toast-container';
+      document.body.appendChild(toastContainer);
+
+      function showToast(message, type = 'info') {
+        const toast = document.createElement('div');
+        toast.className = `toast ${type}`;
+        const icons = {
+          success: '<svg class="toast-icon" fill="none" stroke="#22c55e" stroke-width="2" viewBox="0 0 24 24"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>',
+          error: '<svg class="toast-icon" fill="none" stroke="#ef4444" stroke-width="2" viewBox="0 0 24 24"><path d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>',
+          warning: '<svg class="toast-icon" fill="none" stroke="#f59e0b" stroke-width="2" viewBox="0 0 24 24"><path d="M12 9v2m0 4h.01M5.07 19h13.86c1.54 0 2.5-1.67 1.73-2.99L13.73 4.01c-.77-1.33-2.69-1.33-3.46 0L3.34 16.01C2.57 17.33 3.53 19 5.07 19z"/></svg>',
+          info: '<svg class="toast-icon" fill="none" stroke="#c5a572" stroke-width="2" viewBox="0 0 24 24"><path d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>'
+        };
+        toast.innerHTML = `${icons[type] || icons.info}<span>${message}</span><button class="toast-close" aria-label="Close">&times;</button>`;
+        toastContainer.appendChild(toast);
+        toast.querySelector('.toast-close').addEventListener('click', () => removeToast(toast));
+        setTimeout(() => removeToast(toast), 5000);
+      }
+      function removeToast(toast) {
+        if (toast.classList.contains('removing')) return;
+        toast.classList.add('removing');
+        setTimeout(() => toast.remove(), 300);
+      }
+
       const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
       if (csrfToken) {
         document.querySelectorAll('form').forEach((form) => {
@@ -513,6 +550,7 @@
         } catch (error) {
           console.error('Failed to load time slots:', error);
           document.getElementById('pickup_time').innerHTML = '<option value="">Error loading slots</option>';
+          showToast('Unable to load time slots. Please refresh the page.', 'error');
         }
       }
 
@@ -538,6 +576,7 @@
           if (!bookingData.pickup_date || !bookingData.pickup_time) {
             note.textContent = "Please select a date and time to confirm.";
             note.style.color = "#dc3545";
+            showToast('Please select a date and time.', 'warning');
             return;
           }
 
@@ -555,6 +594,7 @@
               const result = await response.json();
               note.textContent = `Slot confirmed for ${bookingData.pickup_date} at ${bookingData.pickup_time}. We will send you a confirmation email.`;
               note.style.color = "#28a745";
+              showToast('Slot confirmed! Check your email.', 'success');
               form.reset();
               if (result.redirect_url) {
                 setTimeout(() => {
@@ -615,5 +655,7 @@
       }
     </script>
     <script src="{{ url_for('static', filename='site-features.js') }}"></script>
+
+    {% include 'chatbot_widget.html' %}
   </body>
 </html>

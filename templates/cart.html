@@ -104,7 +104,11 @@
             </div>
             <div class="summary-actions">
               <a href="{{ url_for('checkout') }}" class="btn-primary">Proceed to checkout</a>
-              <a href="{{ url_for('index') }}" class="btn-sec">Continue shopping</a>
+              <a href="{{ url_for('index') }}#seasonal" class="btn-sec">Continue shopping</a>
+            </div>
+            <div class="promo-row">
+              <input type="text" id="cartPromoCode" placeholder="Discount code" aria-label="Discount code">
+              <button type="button" class="btn-pill" onclick="if(document.getElementById('cartPromoCode').value) window.location.href='{{ url_for('checkout') }}?discount_code='+encodeURIComponent(document.getElementById('cartPromoCode').value)">Apply</button>
             </div>
             {% if pickup_confirmed and pickup_date and pickup_time %}
             <p class="summary-note">Pickup slot: {{ pickup_date }} at {{ pickup_time }}.</p>
@@ -171,5 +175,6 @@
         });
       });
     </script>
+    {% include 'chatbot_widget.html' %}
   </body>
 </html>

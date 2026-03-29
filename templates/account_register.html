@@ -67,12 +67,24 @@
           </div>
           <div class="field">
             <label for="password">Password</label>
-            <input type="password" id="password" name="password" required>
-            <small class="summary-note">Minimum 8 characters.</small>
+            <div class="password-wrapper">
+              <input type="password" id="password" name="password" required autocomplete="new-password">
+              <button type="button" class="password-toggle" onclick="const p=document.getElementById('password');p.type=p.type==='password'?'text':'password';this.textContent=p.type==='password'?'Show':'Hide'" aria-label="Toggle password visibility">Show</button>
+            </div>
+            <div class="strength-meter" id="strengthMeter">
+              <div class="strength-bar" id="s1"></div>
+              <div class="strength-bar" id="s2"></div>
+              <div class="strength-bar" id="s3"></div>
+              <div class="strength-bar" id="s4"></div>
+            </div>
+            <div class="strength-label" id="strengthLabel">Minimum 8 characters</div>
           </div>
           <div class="field">
             <label for="confirm_password">Confirm password</label>
-            <input type="password" id="confirm_password" name="confirm_password" required>
+            <div class="password-wrapper">
+              <input type="password" id="confirm_password" name="confirm_password" required autocomplete="new-password">
+              <button type="button" class="password-toggle" onclick="const p=document.getElementById('confirm_password');p.type=p.type==='password'?'text':'password';this.textContent=p.type==='password'?'Show':'Hide'" aria-label="Toggle password visibility">Show</button>
+            </div>
           </div>
           <button type="submit" class="btn-primary" style="width: 100%">Create account</button>
         </form>
@@ -109,6 +121,28 @@
           }
         });
       }
+
+      /* Password strength meter */
+      const pw = document.getElementById('password');
+      const bars = [document.getElementById('s1'), document.getElementById('s2'), document.getElementById('s3'), document.getElementById('s4')];
+      const label = document.getElementById('strengthLabel');
+      
+      pw?.addEventListener('input', () => {
+        const v = pw.value;
+        let score = 0;
+        if (v.length >= 8) score++;
+        if (/[A-Z]/.test(v) && /[a-z]/.test(v)) score++;
+        if (/\d/.test(v)) score++;
+        if (/[^A-Za-z0-9]/.test(v)) score++;
+
+        const levels = ['', 'weak', 'fair', 'good', 'strong'];
+        const labels = ['Minimum 8 characters', 'Weak', 'Fair', 'Good', 'Strong'];
+        bars.forEach((b, i) => {
+          b.className = 'strength-bar' + (i < score ? ` ${levels[score]}` : '');
+        });
+        label.textContent = labels[score];
+      });
     </script>
+    {% include 'chatbot_widget.html' %}
   </body>
 </html>
